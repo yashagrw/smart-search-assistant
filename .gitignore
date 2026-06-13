@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+
+# VSCode
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env
+
+# Logs
+*.log
+
+# Test and coverage
+htmlcov/
+.coverage
+.tox/
+.nox/
+.pytest_cache/
+
+# Misc
+*.sqlite3
+*.db
+
+# Ignore local data
+local_data/
+
+# Ignore secrets
+secrets.json
