@@ -8,9 +8,7 @@ router = APIRouter()
 logger = configure_logger(name="ask_agent", level=logging.INFO)
 
 ALLOWED_MODEL_NAMES = [
-    "gpt-3.5-turbo",
-    "gpt-4",
-    "gpt-4.1",
+    "gemini-2.5-flash",
 ]
 
 @router.post("/ask")

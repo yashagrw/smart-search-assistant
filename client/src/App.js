@@ -29,7 +29,7 @@ const App = () => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model_name: "gpt-4.1",
+          model_name: "gemini-2.5-flash",
           query: currentInput,
           system_prompt: `CRITICAL INSTRUCTIONS - FOLLOW EXACTLY:
 1. When you need data, make ONE tool call only

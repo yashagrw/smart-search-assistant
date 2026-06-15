@@ -30,7 +30,7 @@ def get_response_from_ai_agent(model_name, query, allow_search, prompt, thread_i
     logger.info(f"Invoking AI agent with model: {model_name}, allow_search: {allow_search}, prompt: {prompt}")
 
 
-    gemini_model = genai.GenerativeModel("models/gemini-2.5-flash")
+    gemini_model = genai.GenerativeModel(f"models/{model_name}")
 
     tools = []
 
