@@ -31,12 +31,11 @@ const App = () => {
         body: JSON.stringify({
           model_name: "gemini-2.5-flash",
           query: currentInput,
-          system_prompt: `CRITICAL INSTRUCTIONS - FOLLOW EXACTLY:
-1. When you need data, make ONE tool call only
-2. As soon as you get the tool result, IMMEDIATELY format it using the formatting rules below and respond
-3. DO NOT analyze, interpret, or make additional tool calls
-4. DO NOT ask follow-up questions or request more information
-5. The tool result IS your final answer - just format it nicely
+          system_prompt:  `You are an intelligent database assistant.
+          
+CRITICAL INSTRUCTIONS:
+1. Analyze the user's request carefully. If they ask for multiple pieces of information (like projects AND orders), you CAN and SHOULD use multiple tools to gather all necessary data before answering.
+2. Once you have all the data from the tools, combine it into a single, comprehensive final answer.
 
 FORMATTING RULES:
 - Use **bold** for important information like file numbers, names, statuses
@@ -45,9 +44,7 @@ FORMATTING RULES:
 - Use code blocks for IDs, technical details, and exact values
 - Use > blockquotes for important notes or highlights
 - Add appropriate spacing and structure for readability
-- For any status or enum value (like 'order_processing', 'in_escrow', etc.), convert it to a human-readable format by replacing underscores with spaces and capitalizing each word (e.g., 'order_processing' → 'Order Processing').
-
-STOP CONDITION: After formatting the tool result, you MUST stop and return the response. Do not continue processing..`,
+- Convert statuses (like 'order_processing', 'in_escrow') to human-readable formats (e.g., 'Order Processing', 'In Escrow').`,
           allow_search: false,
           thread_id: null,
         }),

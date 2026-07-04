@@ -12,31 +12,22 @@ from typing import TypedDict
 from langgraph.graph import StateGraph, END
 import json
 
-#from langchain_community.tools import TavilySearchResults
-# from langgraph.prebuilt import create_react_agent
-# from langgraph.checkpoint.memory import MemorySaver
-
+# --- ENVIRONMENT SETUP ---
 load_dotenv()
 GEMINI_API_KEY = environ.get("GEMINI_API_KEY")
-
-# TAVILY_API_KEY = environ.get("TAVILY_API_KEY")
-
 logger = logging.getLogger(__name__)
 
-# #FUTURE: Enable MemorySaver when LangGraph memory support is implemented
-# memory = MemorySaver()
-
+# Configure Gemini with the API Key
 genai.configure(api_key=GEMINI_API_KEY)
 
-# The thread is a unique key that identifies this particular conversation
-thread_id = uuid.uuid4()
-
-# Define the state schema for passing data between graph nodes
+# --- LANGGRAPH STATE (THE DABBA) ---
 class AgentState(TypedDict):
+    system_prompt: str    
     query: str
     tool_name: str
     tool_args: dict
     tool_result: str
+    all_tool_results: str 
     final_answer: str
 
 # --- NATIVE GEMINI TOOLS ---
@@ -107,7 +98,8 @@ def search_global_database(keyword: str) -> str:
         return str(result)
     except Exception as e:
         return f"Search error: {str(e)}"
-    
+
+
 # --- LANGGRAPH NODES (THE STATIONS) ---
 
 def agent_node(state: AgentState):
@@ -117,39 +109,43 @@ def agent_node(state: AgentState):
     """
     logger.info("🧠 [Node] AI Agent is thinking...")
     
-    # Setup the Manager with all available tools
     model = genai.GenerativeModel(
         model_name="models/gemini-2.5-flash",
         tools=[search_project_database, search_order_database, search_global_database]
     )
     
-    # Check if we just came back from a tool (Looping back)
-    if state.get("tool_result"):
-        logger.info("   -> Processing tool results for final answer.")
+    history = state.get("all_tool_results", "")
+    
+    if history:
+        logger.info("   -> Processing accumulated tool results.")
         prompt = f"""
-        User Query: {state['query']}
-        Database Result: {state['tool_result']}
+        System Rules:
+        {state['system_prompt']}
         
-        Task: Provide a natural, conversational, and nicely formatted answer based ONLY on the database result. 
-        Do not mention SQL, tools, or internal steps.
+        Original User Query: {state['query']}
+        
+        Data collected so far:
+        {history}
+        
+        Instructions:
+        1. Review the Data collected so far against the Original User Query.
+        2. If you still need MORE data (e.g., another table to search), make another tool call.
+        3. If you have ALL the required data, generate the final comprehensive answer using the formatting rules.
         """
     else:
-        # First time seeing the query
         logger.info("   -> First pass: Analyzing user query.")
-        prompt = state["query"]
+        prompt = f"{state['system_prompt']}\n\nUser Query: {state['query']}"
         
     try:
         response = model.generate_content(prompt)
         part = response.candidates[0].content.parts[0]
         
-        # Did the AI ask for a tool? (The Parchi)
         if part.function_call:
             func_name = part.function_call.name
             args = {k: v for k, v in part.function_call.args.items()}
             logger.info(f"   -> 🎫 AI requested tool: {func_name}")
             return {"tool_name": func_name, "tool_args": args}
             
-        # Did the AI give a direct answer?
         else:
             logger.info("   -> 💬 Final answer generated.")
             return {"final_answer": part.text, "tool_name": None}
@@ -161,31 +157,33 @@ def agent_node(state: AgentState):
 def tool_node(state: AgentState):
     """
     The Executor. 
-    It reads the Parchi (tool_name) from the state, runs the specific tool, and returns the data.
+    It reads the Parchi, runs the specific tool, and accumulates the data.
     """
     tool_name = state.get("tool_name")
     args = state.get("tool_args", {})
     
     logger.info(f"🛠️ [Node] Executing tool: {tool_name}")
     
-    # Map string names to actual Python functions
     available_tools = {
         "search_project_database": search_project_database,
         "search_order_database": search_order_database,
         "search_global_database": search_global_database
     }
     
-    # Execute the requested tool
     if tool_name in available_tools:
         tool_func = available_tools[tool_name]
         try:
-            # We use **args to unpack the dictionary into function parameters
             result = tool_func(**args)
             logger.info("   -> Tool execution successful.")
-            return {"tool_result": result}
+            
+            current_history = state.get("all_tool_results", "")
+            new_history = current_history + f"\n--- Data from {tool_name} ---\n{result}\n"
+            
+            return {"tool_result": result, "all_tool_results": new_history}
+            
         except Exception as e:
             logger.error(f"Tool Execution Error: {e}")
-            return {"tool_result": f"Error executing {tool_name}: {e}"}
+            return {"tool_result": str(e)}
             
     return {"tool_result": "Error: Unknown tool requested."}
 
@@ -204,17 +202,13 @@ def get_response_from_ai_agent(model_name, query, allow_search, prompt, thread_i
     """
     logger.info(f"🚀 Starting LangGraph Agent for query: {query}")
     
-    # 1. BUILD THE GRAPH FACTORY
     workflow = StateGraph(AgentState)
     
-    # Add our stations (nodes)
     workflow.add_node("agent", agent_node)
     workflow.add_node("action", tool_node)
     
-    # Set the starting point
     workflow.set_entry_point("agent")
     
-    # Add the Track Switcher
     workflow.add_conditional_edges(
         "agent",
         should_continue,
@@ -224,27 +218,22 @@ def get_response_from_ai_agent(model_name, query, allow_search, prompt, thread_i
         }
     )
     
-    # Loop back from action to agent
     workflow.add_edge("action", "agent")
-    
-    # Compile the workflow
     app = workflow.compile()
     
-    # 2. RUN THE WORKFLOW
     try:
-        # Initialize the state (The Dabba)
         initial_state = {
+            "system_prompt": prompt,
             "query": query,
             "tool_name": None,
             "tool_args": {},
             "tool_result": None,
+            "all_tool_results": "",
             "final_answer": None
         }
         
-        # Start the engine
         final_state = app.invoke(initial_state)
         
-        # Return the final answer to the frontend/user
         answer = final_state.get("final_answer")
         if answer:
             logger.info("✅ Workflow completed successfully.")
