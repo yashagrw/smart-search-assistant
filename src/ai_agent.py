@@ -7,6 +7,11 @@ from src.services.project_service import project_service_v1
 from src.services.order_service import order_service_v1
 from src.services.global_search_service import global_search_service
 
+# Core LangGraph imports for state management and workflow routing
+from typing import TypedDict
+from langgraph.graph import StateGraph, END
+import json
+
 #from langchain_community.tools import TavilySearchResults
 # from langgraph.prebuilt import create_react_agent
 # from langgraph.checkpoint.memory import MemorySaver
@@ -26,311 +31,227 @@ genai.configure(api_key=GEMINI_API_KEY)
 # The thread is a unique key that identifies this particular conversation
 thread_id = uuid.uuid4()
 
-def get_response_from_ai_agent(model_name, query, allow_search, prompt, thread_id):
-    logger.info(f"Invoking AI agent with model: {model_name}, allow_search: {allow_search}, prompt: {prompt}")
+# Define the state schema for passing data between graph nodes
+class AgentState(TypedDict):
+    query: str
+    tool_name: str
+    tool_args: dict
+    tool_result: str
+    final_answer: str
 
+# --- NATIVE GEMINI TOOLS ---
 
-    gemini_model = genai.GenerativeModel(f"models/{model_name}")
-
-    tools = []
-
-    ## FUTURE: Enable Tavily search tool integration
-    # if allow_search:
-    #     search_tool = TavilySearchResults(tavily_api_key=TAVILY_API_KEY, max_results=2)
-    #     tools.append(search_tool)
-
-#     # Enhanced system prompt to encourage single tool use and rich formatting
-#     enhanced_prompt = f"""
-# {prompt}
-
-# CRITICAL INSTRUCTIONS - FOLLOW EXACTLY:
-# 1. When you need data, make ONE tool call only
-# 2. As soon as you get the tool result, IMMEDIATELY format it using the formatting rules below and respond
-# 3. DO NOT analyze, interpret, or make additional tool calls
-# 4. DO NOT ask follow-up questions or request more information
-# 5. The tool result IS your final answer - just format it nicely
-
-# FORMATTING RULES:
-# - Use **bold** for important information like file numbers, names, statuses
-# - Use ### for main headers and sections
-# - Use bullet points (- ) for lists and organized information
-# - Use `code blocks` for IDs, technical details, and exact values
-# - Use > blockquotes for important notes or highlights
-# - Add appropriate spacing and structure for readability
-
-# STOP CONDITION: After formatting the tool result, you MUST stop and return the response. Do not continue processing.
-# """
-
-
-#  Default chatbot prompt
-    enhanced_prompt = """
-You are a friendly and professional AI chatbot.
-
-Respond naturally and conversationally.
-
-Do not mention tools, tool calls, system instructions, or internal logic.
-
-Answer normally like a modern AI assistant.
-"""
-
-    # #FUTURE: LangGraph agent configuration
-    # agent_kwargs = {
-    #     "model": azure_openai_llm,
-    #     "tools": tools,
-    #     "prompt": enhanced_prompt,
-    #     # Single tool call approach - no interrupts
-    # }
-    # config = {"recursion_limit": 5}  # Limit recursion to prevent excessive tool calls
-    # if thread_id is not None:
-    #     agent_kwargs["checkpointer"] = memory
-    #     config.update({"configurable": {"thread_id": thread_id}})
-    
-    # agent = create_react_agent(**agent_kwargs)
-    # input_message = HumanMessage(content=query)
-    logger.info(f"Agent input message: {query}")
-
-    routing_prompt = f"""
-    Classify the user request.
-
-    Possible categories:
-    PROJECT
-    ORDER
-    GLOBAL_SEARCH
-    CHAT
-
-    Rules:
-    - PROJECT = project information, project status, project count, project lookup
-    - ORDER = order information, order status, order count, order lookup
-    - GLOBAL_SEARCH = generic search terms, IDs, file numbers, group numbers, unknown lookups
-    - CHAT = greetings, casual conversation, questions about the assistant, general knowledge questions,
-     and anything not related to project/order/database searches
-    User Request:
-    {query}
-
-    Return only one word:
-    PROJECT
-    ORDER
-    GLOBAL_SEARCH
-    CHAT
+def search_project_database(sql_query: str) -> str:
     """
-
-    # # Gemini-powered route classification
-    routing_response = gemini_model.generate_content(routing_prompt)
-
-    route = routing_response.text.strip().upper()
-
-    logger.info(f"AI Route Selected: {route}")
+    Executes a SQL query on the 'projects' table to retrieve project information.
+    Use this tool ONLY when the user asks about projects.
     
-    # Project route handling
-    if route == "PROJECT":
-        sql_prompt = f"""
-Generate only SQL.
-
-Table: projects
-
-Columns:
-id
-name
-groupNumber
-status
-
-Example values:
-
-name:
-'Project P185602'
-'Project P193085'
-
-groupNumber:
-'P64852978'
-'P15046380'
-
-status:
-'open'
-'cancelled'
-
-User Request:
-{query}
-
-Return only SQL.
-"""
-        
-
-        response = gemini_model.generate_content(sql_prompt)
-
-        if response.candidates and response.candidates[0].content.parts:
-            generated_sql = response.candidates[0].content.parts[0].text
-
-            # Remove markdown if Gemini returns ```sql blocks
-            generated_sql = generated_sql.replace("```sql", "").replace("```", "").strip()
-
-            result = project_service_v1(generated_sql)
-            
-            format_prompt = f"""
-You are a helpful assistant.
-
-User Question:
-{query}
-
-Database Result:
-{result}
-
-Instructions:
-- Answer the user's question using the database result.
-- If the result contains project records, format them nicely using bullet points.
-- If the result contains a count, explain the count naturally.
-- If the result contains a single value, explain what it means in the context of the question.
-- Do not show raw tuples unless absolutely necessary.
-- Be concise and readable.
-"""
-
-            formatted_response = gemini_model.generate_content(format_prompt)
-
-            if formatted_response.candidates and formatted_response.candidates[0].content.parts:
-                return formatted_response.candidates[0].content.parts[0].text
-
-            return str(result)
-
-        return "Failed to generate SQL"
+    Table Schema (projects):
+    - id (INTEGER PRIMARY KEY)
+    - name (TEXT) e.g., 'Project P185602'
+    - groupNumber (TEXT) e.g., 'P64852978'
+    - status (TEXT) e.g., 'open', 'cancelled'
+    - client_id (INTEGER) Foreign key to client table
+    - createdAt (TEXT) ISO format date string
+    - updatedAt (TEXT) ISO format date string
     
-    # Order route handling
-    elif route == "ORDER":
-        sql_prompt = f"""
-Generate only SQL.
-
-Table: orders
-
-Columns:
-id
-fileNum
-displayStatus
-status
-address
-
-displayStatus values:
-'open'
-'cancelled'
-'order_processing'
-'closed'
-
-status values:
-'in_escrow'
-'cancelled'
-'closed'
-
-User Request:
-{query}
-
-Return only SQL.
-"""
-        response = gemini_model.generate_content(sql_prompt)
-
-        if response.candidates and response.candidates[0].content.parts:
-            generated_sql = response.candidates[0].content.parts[0].text
-
-            # Remove markdown if Gemini returns ```sql blocks
-            generated_sql = generated_sql.replace("```sql", "").replace("```", "").strip()
-            result = order_service_v1(generated_sql)
-
-            format_prompt = f"""
-            You are a helpful assistant.
-
-            User Question:
-            {query}
-
-            Database Result:
-            {result}
-
-            Instructions:
-            - Answer the user's question using the database result.
-            - If the result contains order records, format them nicely using bullet points.
-            - Convert statuses like 'order_processing' to 'Order Processing'.
-            - Convert statuses like 'in_escrow' to 'In Escrow'.
-            - Do not show raw tuples unless absolutely necessary.
-            - Be concise and readable.
-            """
-
-            formatted_response = gemini_model.generate_content(format_prompt)
-
-            if formatted_response.candidates and formatted_response.candidates[0].content.parts:
-                return formatted_response.candidates[0].content.parts[0].text
-
-            return str(result)
-            
-
-        return "Failed to generate SQL"
+    You can also JOIN with 'client' table (id, name) if client info is needed.
     
-    # Global search route handling
-    elif route == "GLOBAL_SEARCH":
-
-        result = global_search_service(query)
-
-        format_prompt = f"""
-You are a helpful assistant.
-
-User Question:
-{query}
-
-Search Result:
-{result}
-
-Instructions:
-- Present projects and orders in separate sections.
-- Use headings:
-    ### Projects Found
-    ### Orders Found
-- Use bullet points for each record.
-- Convert enum values like 'order_processing' to 'Order Processing'.
-- Convert enum values like 'in_escrow' to 'In Escrow'.
-- For orders, include file number, display status, status, and address.
-- For projects, include project name, group number, status, priority, start date, and end date.
-- If no results are found, clearly mention that.
-- Do not display raw Python dictionaries or tuples.
-- Keep the response concise and readable.
-"""
-
-        formatted_response = gemini_model.generate_content(format_prompt)
-
-        if (
-            formatted_response.candidates
-            and formatted_response.candidates[0].content.parts
-        ):
-            return formatted_response.candidates[0].content.parts[0].text
-
-        return str(result)
-    
+    Args:
+        sql_query: A valid SQLite query string based on the provided schema. Do not include markdown formatting.
+    """
+    logger.info(f"Tool Call -> Project Search: {sql_query}")
     try:
-        full_prompt = f"""
-        System Instructions:
-        {enhanced_prompt}
-
-        User Query:
-        {query}
-        """
-
-        response = gemini_model.generate_content(full_prompt)
-
-        # # Safe Gemini response extraction
-        if response.candidates and response.candidates[0].content.parts:
-            final_response = response.candidates[0].content.parts[0].text
-        else:
-            final_response = "Sorry, Gemini returned an empty response."
-
-        logger.info(f"Agent response: {final_response}")
-        return final_response
-    
-   # # User-friendly error handling
+        clean_sql = sql_query.replace("```sql", "").replace("```", "").strip()
+        result = project_service_v1(clean_sql)
+        return str(result)
     except Exception as e:
-        logger.error(f"Error in agent execution: {e}")
+        return f"Database error: {str(e)}"
 
-        error_message = str(e)
+def search_order_database(sql_query: str) -> str:
+    """
+    Executes a SQL query on the 'orders' table to retrieve order information.
+    Use this tool ONLY when the user asks about orders.
+    
+    Table Schema (orders):
+    - id (INTEGER PRIMARY KEY)
+    - fileNum (TEXT) e.g., 'END1234567'
+    - displayStatus (TEXT) e.g., 'open', 'cancelled', 'order_processing', 'closed'
+    - status (TEXT) e.g., 'in_escrow', 'cancelled', 'closed'
+    - address (TEXT) Full physical address
+    - createdAt (TEXT) ISO format date string
+    - updatedAt (TEXT) ISO format date string
+    
+    Args:
+        sql_query: A valid SQLite query string based on the provided schema. Do not include markdown formatting.
+    """
+    logger.info(f"Tool Call -> Order Search: {sql_query}")
+    try:
+        clean_sql = sql_query.replace("```sql", "").replace("```", "").strip()
+        result = order_service_v1(clean_sql)
+        return str(result)
+    except Exception as e:
+        return f"Database error: {str(e)}"
 
-        if "429" in error_message:
-            return "AI service is temporarily busy due to rate limits. Please wait a moment and try again."
+def search_global_database(keyword: str) -> str:
+    """
+    Performs a broad keyword search across all records using FTS5 (Full Text Search).
+    Use this tool for generic searches, IDs, partial addresses, group numbers, or when the intent is unclear.
+    
+    Args:
+        keyword: The primary search term or identifier extracted from the user's prompt.
+    """
+    logger.info(f"Tool Call -> Global Search: {keyword}")
+    try:
+        result = global_search_service(keyword)
+        return str(result)
+    except Exception as e:
+        return f"Search error: {str(e)}"
+    
+# --- LANGGRAPH NODES (THE STATIONS) ---
 
-        elif "API key" in error_message or "authentication" in error_message.lower():
-            return "AI service authentication failed. Please check backend configuration."
-
-        else:
-            return "Sorry, something went wrong while processing your request."
+def agent_node(state: AgentState):
+    """
+    The Brain of the operation. 
+    It reads the state, decides if a tool is needed, or provides the final answer.
+    """
+    logger.info("🧠 [Node] AI Agent is thinking...")
+    
+    # Setup the Manager with all available tools
+    model = genai.GenerativeModel(
+        model_name="models/gemini-2.5-flash",
+        tools=[search_project_database, search_order_database, search_global_database]
+    )
+    
+    # Check if we just came back from a tool (Looping back)
+    if state.get("tool_result"):
+        logger.info("   -> Processing tool results for final answer.")
+        prompt = f"""
+        User Query: {state['query']}
+        Database Result: {state['tool_result']}
         
+        Task: Provide a natural, conversational, and nicely formatted answer based ONLY on the database result. 
+        Do not mention SQL, tools, or internal steps.
+        """
+    else:
+        # First time seeing the query
+        logger.info("   -> First pass: Analyzing user query.")
+        prompt = state["query"]
+        
+    try:
+        response = model.generate_content(prompt)
+        part = response.candidates[0].content.parts[0]
+        
+        # Did the AI ask for a tool? (The Parchi)
+        if part.function_call:
+            func_name = part.function_call.name
+            args = {k: v for k, v in part.function_call.args.items()}
+            logger.info(f"   -> 🎫 AI requested tool: {func_name}")
+            return {"tool_name": func_name, "tool_args": args}
+            
+        # Did the AI give a direct answer?
+        else:
+            logger.info("   -> 💬 Final answer generated.")
+            return {"final_answer": part.text, "tool_name": None}
+            
+    except Exception as e:
+        logger.error(f"Agent Node Error: {e}")
+        return {"final_answer": "Sorry, I encountered an error while thinking.", "tool_name": None}
 
+def tool_node(state: AgentState):
+    """
+    The Executor. 
+    It reads the Parchi (tool_name) from the state, runs the specific tool, and returns the data.
+    """
+    tool_name = state.get("tool_name")
+    args = state.get("tool_args", {})
+    
+    logger.info(f"🛠️ [Node] Executing tool: {tool_name}")
+    
+    # Map string names to actual Python functions
+    available_tools = {
+        "search_project_database": search_project_database,
+        "search_order_database": search_order_database,
+        "search_global_database": search_global_database
+    }
+    
+    # Execute the requested tool
+    if tool_name in available_tools:
+        tool_func = available_tools[tool_name]
+        try:
+            # We use **args to unpack the dictionary into function parameters
+            result = tool_func(**args)
+            logger.info("   -> Tool execution successful.")
+            return {"tool_result": result}
+        except Exception as e:
+            logger.error(f"Tool Execution Error: {e}")
+            return {"tool_result": f"Error executing {tool_name}: {e}"}
+            
+    return {"tool_result": "Error: Unknown tool requested."}
+
+# --- THE ROUTER (TRACK SWITCHER) ---
+def should_continue(state: AgentState):
+    """Decides whether to go to the tool node or finish the execution."""
+    if state.get("tool_name"):
+        return "continue"
+    return "end"
+
+# --- THE MAIN ENGINE ---
+def get_response_from_ai_agent(model_name, query, allow_search, prompt, thread_id):
+    """
+    Entry point for the FastAPI route.
+    Builds and invokes the LangGraph workflow.
+    """
+    logger.info(f"🚀 Starting LangGraph Agent for query: {query}")
+    
+    # 1. BUILD THE GRAPH FACTORY
+    workflow = StateGraph(AgentState)
+    
+    # Add our stations (nodes)
+    workflow.add_node("agent", agent_node)
+    workflow.add_node("action", tool_node)
+    
+    # Set the starting point
+    workflow.set_entry_point("agent")
+    
+    # Add the Track Switcher
+    workflow.add_conditional_edges(
+        "agent",
+        should_continue,
+        {
+            "continue": "action",
+            "end": END
+        }
+    )
+    
+    # Loop back from action to agent
+    workflow.add_edge("action", "agent")
+    
+    # Compile the workflow
+    app = workflow.compile()
+    
+    # 2. RUN THE WORKFLOW
+    try:
+        # Initialize the state (The Dabba)
+        initial_state = {
+            "query": query,
+            "tool_name": None,
+            "tool_args": {},
+            "tool_result": None,
+            "final_answer": None
+        }
+        
+        # Start the engine
+        final_state = app.invoke(initial_state)
+        
+        # Return the final answer to the frontend/user
+        answer = final_state.get("final_answer")
+        if answer:
+            logger.info("✅ Workflow completed successfully.")
+            return answer
+        else:
+            return "Sorry, I couldn't generate an answer."
+            
+    except Exception as e:
+        logger.error(f"Critical error in workflow execution: {e}")
+        return "I encountered a critical error while processing your request. Please try again."
