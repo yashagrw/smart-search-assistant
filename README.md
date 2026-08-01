@@ -1,300 +1,159 @@
-# Smart Search Assistant using Gemini and SQLite
+# Smart Search Assistant using Gemini, LangGraph, and SQLite
 
 ## Overview
 
-Smart Search Assistant is an AI-powered application that enables natural language interaction with project and order data. The application combines a React frontend with a FastAPI backend and leverages Gemini 2.5 Flash to intelligently route user requests and generate meaningful responses.
+Smart Search Assistant is an advanced AI-powered autonomous agent that enables natural language interaction with project and order data. The application combines a React frontend with a FastAPI backend and leverages **LangGraph** and **Gemini 2.5 Flash** to intelligently orchestrate multi-step tool execution, retain conversational memory, and generate meaningful responses.
 
-Users can retrieve information using conversational queries instead of manually writing database queries. The system supports project search, order retrieval, and global full-text search across datasets stored in SQLite.
+Users can retrieve complex information using conversational queries instead of manually writing database queries. The system supports project search, order retrieval, and global full-text search across datasets stored in SQLite.
 
 ---
 
 ## Features
 
-### AI-Powered Query Processing
+### 🧠 Autonomous Agent (Powered by LangGraph)
+*   **Multi-Tool Orchestration:** The agent can reason through complex queries and execute multiple tools in a single loop (e.g., fetching project details and calculating order statuses simultaneously).
+*   **Conversational Memory:** Utilizes LangGraph's `MemorySaver` to retain chat context across sessions, preventing the AI from losing track of previous messages.
+*   **Self-Correction (Agentic Fallback):** If a specific SQL query yields no results, the agent can autonomously adapt and fall back to broader FTS5 global searches.
 
-* Gemini 2.5 Flash integration for intelligent request handling
-* Natural language understanding for user queries
-* AI-driven routing to determine the appropriate data retrieval strategy
-* Human-friendly response formatting
+### 📊 Database Search Capabilities
+*   **Project Search:** Retrieve project information (status, dates, clients) using natural language.
+*   **Order Search:** Search by file number, status, or address.
+*   **Global Search:** SQLite FTS5-powered full-text search across all records with deduplication.
+*   **Text-to-SQL Automation:** The AI dynamically generates and executes SQLite queries based on the database schema provided in tool docstrings.
 
-### Project Search
-
-* Retrieve project information using natural language
-* Search by project number, status, or other project attributes
-* Structured and readable output formatting
-
-### Order Search
-
-* Retrieve order information using conversational queries
-* Search by file number, status, or address
-* AI-generated SQL queries executed against SQLite
-
-### Global Search
-
-* Full-text search across projects and orders
-* SQLite FTS5-powered search capabilities
-* Prefix matching and fallback substring matching
-* Deduplicated results for improved accuracy
-
-### Frontend Experience
-
-* Modern React-based chat interface
-* Rich text rendering for formatted responses
-* Loading states and error handling
-* Responsive user experience
-
-### Backend Capabilities
-
-* FastAPI-powered REST API
-* Environment-based configuration management
-* Centralized logging and error handling
-* Modular service-oriented architecture
+### 💻 System & Interface
+*   **Frontend:** Modern React-based chat interface with rich Markdown rendering.
+*   **Backend:** Fast and modular REST API built on FastAPI.
 
 ---
 
 ## Architecture
 
-```text
-┌──────────────────┐
-│  React Frontend  │
-│   (Port 4000)    │
-└────────┬─────────┘
-         │ HTTP
-         ▼
-┌──────────────────┐
-│ FastAPI Backend  │
-│   (Port 8000)    │
-└────────┬─────────┘
-         │
-         ▼
-┌──────────────────┐
-│ Gemini 2.5 Flash │
-│ AI Query Routing │
-└────────┬─────────┘
-         │
-         ├────────────► Project Search
-         │
-         ├────────────► Order Search
-         │
-         └────────────► Global Search
-                           │
-                           ▼
-                  ┌────────────────┐
-                  │ SQLite + FTS5  │
-                  │ Local Database │
-                  └────────────────┘
-```
+The system has been upgraded from a single-intent router to a stateful, cyclical LangGraph workflow.
+
+    ┌──────────────────┐
+    │  React Frontend  │
+    │   (Port 4000)    │
+    └────────┬─────────┘
+             │ HTTP Request (with Thread ID)
+             ▼
+    ┌────────────────────────────────────────────────────────┐
+    │                   FastAPI Backend                      │
+    │                                                        │
+    │  ┌──────────────────────────────────────────────────┐  │
+    │  │        LangGraph Autonomous Agent Engine         │  │
+    │  │                                                  │  │
+    │  │  ┌──────────────┐          ┌──────────────────┐  │  │
+    │  │  │ LLM Node     │ Tool Call│ Action Node      │  │  │
+    │  │  │ (Gemini 2.5) ├─────────►│ (Python Tools)   │  │  │
+    │  │  │              │          │                  │  │  │
+    │  │  │ [Brain]      │◄─────────┤ [Executes SQL]   │  │  │
+    │  │  └──────┬───────┘  Result  └────────┬─────────┘  │  │
+    │  │         │                           │            │  │
+    │  │         │ Final Answer              ▼            │  │
+    │  └─────────┼─────────────────── ┌────────────────┐  │  │
+    │            │                    │ SQLite + FTS5  │  │  │
+    │            ▼                    └────────────────┘  │  │
+    │   Response to User                                  │  │
+    └────────────────────────────────────────────────────────┘
 
 ---
 
 ## Technology Stack
 
 ### Backend
-
-* Python
-* FastAPI
-* SQLite
-* SQLite FTS5
-* Google Gemini 2.5 Flash
-* Uvicorn
-* Pydantic
+*   Python (FastAPI, Uvicorn, Pydantic)
+*   SQLite (with FTS5)
+*   **LangGraph** (State Management & Agent Workflow)
+*   Google Gemini 2.5 Flash (Native SDK)
 
 ### Frontend
-
-* React
-* JavaScript (ES6+)
-* CSS
-* React Markdown
-
-### AI & Search
-
-* Gemini 2.5 Flash
-* Natural Language to SQL Generation
-* Full-Text Search (FTS5)
+*   React, JavaScript (ES6+), CSS, React Markdown
 
 ---
 
 ## Project Structure
 
-```text
-ai-chatbot/
-├── client/
-│   ├── public/
-│   └── src/
-│       ├── App.js
-│       ├── App.css
-│       └── index.js
-│
-├── src/
-│   ├── ai_agent.py
-│   ├── main.py
-│   ├── db_setup.py
-│   │
-│   ├── models/
-│   │   └── ask_request_state.py
-│   │
-│   ├── routes/
-│   │   └── ask.py
-│   │
-│   ├── services/
-│   │   ├── project_service.py
-│   │   ├── order_service.py
-│   │   └── global_search_service.py
-│   │
-│   ├── tools/
-│   │   ├── get_projects.py
-│   │   ├── get_orders.py
-│   │   ├── global_search.py
-│   │   └── __init__.py
-│   │
-│   └── utils/
-│       └── logger.py
-│
-├── local_data.db
-├── requirements.txt
-├── .env
-└── README.md
-```
+    ai-chatbot/
+    ├── client/
+    │   └── src/                 # React Application
+    ├── src/
+    │   ├── ai_agent.py          # Main LangGraph Engine & Tools
+    │   ├── main.py              # FastAPI Application
+    │   ├── db_setup.py          # SQLite Initialization
+    │   ├── models/              # Pydantic Schemas
+    │   ├── routes/              # API Endpoints
+    │   ├── services/            # Database Execution Logic
+    │   └── utils/               # Logging & Utilities
+    ├── local_data.db
+    ├── requirements.txt
+    ├── .env
+    └── README.md
+
 
 ---
 
 ## Getting Started
 
 ### Prerequisites
+*   Python 3.9+
+*   Node.js 16+
+*   npm or Yarn
+*   Gemini API Key
 
-* Python 3.9+
-* Node.js 16+
-* npm or Yarn
-* Gemini API Key
+### Backend Setup
 
----
+    git clone <repository-url>
+    cd ai-chatbot
 
-## Backend Setup
+    python -m venv venv
 
-```bash
-git clone <repository-url>
-cd ai-chatbot
+    # Windows
+    venv\Scripts\activate
+    # Linux / macOS
+    source venv/bin/activate
 
-python -m venv venv
-
-# Windows
-venv\Scripts\activate
-
-# Linux / macOS
-source venv/bin/activate
-
-pip install -r requirements.txt
-```
+    pip install -r requirements.txt
 
 Create a `.env` file:
 
-```env
-GEMINI_API_KEY=your_gemini_api_key
-```
+    GEMINI_API_KEY=your_gemini_api_key
 
 Initialize the local database:
 
-```bash
-python src/db_setup.py
-```
+    python src/db_setup.py
 
 Run the backend:
 
-```bash
-python -m uvicorn src.main:app --reload --port 8000
-```
+    python -m uvicorn src.main:app --reload --port 8000
 
----
 
-## Frontend Setup
+### Frontend Setup
 
-```bash
-cd client
+    cd client
+    npm install
+    npm start
 
-npm install
-
-npm start
-```
-
----
-
-## Application URLs
-
-Frontend:
-
-```text
-http://localhost:4000
-```
-
-Backend:
-
-```text
-http://localhost:8000
-```
-
-API Documentation:
-
-```text
-http://localhost:8000/docs
-```
 
 ---
 
 ## Example Queries
 
-### Project Queries
-
-```text
-Show open projects
-
-Find project P64852978
-
-List cancelled projects
-```
-
-### Order Queries
-
-```text
-Show open orders
-
-Find order END9756309
-
-List cancelled orders
-```
-
-### Global Search Queries
-
-```text
-Maple Dr
-
-Search for Springfield
-
-Find information related to END9756309
-```
-
----
-
-## Error Handling
-
-The application provides user-friendly responses for common issues, including:
-
-* API rate limiting
-* Authentication failures
-* Empty AI responses
-* Unexpected backend exceptions
+*   **Single Intent:** "Show open projects"
+*   **Multi-Intent:** "Find project P64852978 and list all cancelled orders."
+*   **Conversational Memory:** 
+    *   User: "Show me details for Project Alpha."
+    *   User: "What is its group number?" *(Agent remembers 'Alpha')*
+*   **Global Search Fallback:** "Search for Springfield"
 
 ---
 
 ## Future Enhancements
-
-* LangGraph integration for advanced agent workflows
-* Tavily search integration for external information retrieval
-* Conversation memory support
-* Deployment automation
-* Enhanced analytics and monitoring
+*   **RAG (Retrieval-Augmented Generation):** Indexing unstructured data (PDFs/Documents) using Vector Databases.
+*   **Multi-Agent Architecture:** Introducing specialized worker agents (e.g., a dedicated SQL Agent and a Formatting Agent) overseen by a Supervisor.
+*   Tavily search integration for real-time web information retrieval.
 
 ---
 
 ## License
-
 This project is intended for educational, learning, and demonstration purposes.
