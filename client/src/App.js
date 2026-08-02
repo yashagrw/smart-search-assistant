@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react" ;
 import ReactMarkdown from "react-markdown";
 import "./App.css";
 
@@ -8,6 +8,8 @@ const App = () => {
   ]);
   const [inputText, setInputText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  // Generate a random unique ID for this browser tab session (only runs once)
+  const sessionId = useRef(`session_${Math.random().toString(36).substring(2, 9)}`);
 
   const handleSend = async () => {
     if (!inputText.trim()) return;
@@ -46,7 +48,8 @@ FORMATTING RULES:
 - Add appropriate spacing and structure for readability
 - Convert statuses (like 'order_processing', 'in_escrow') to human-readable formats (e.g., 'Order Processing', 'In Escrow').`,
           allow_search: false,
-          thread_id: null,
+          //Send the unique session ID instead of null
+          thread_id: sessionId.current,
         }),
       });
 
