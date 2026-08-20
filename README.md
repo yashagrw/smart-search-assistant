@@ -56,32 +56,34 @@ Smart Search Assistant is an advanced AI-powered autonomous agent that enables n
 *   **Frontend:** React, JavaScript (ES6+), React Markdown
 
 ## Project Structure
+
+```text
 ai-chatbot/
-    ├── client/
-    │   └── src/                 # React Application
-    ├── knowledge_base/          # Unstructured data for RAG
-    │   └── company_policies.txt 
-    ├── src/
-    │   ├── ai_agent.py          # Main LangGraph Engine & Agent Tools
-    │   ├── main.py              # FastAPI Application
-    │   ├── db_setup.py          # SQLite Initialization
-    │   ├── models/              # Pydantic Schemas
-    │   ├── routes/              # API Endpoints
-    │   ├── services/            # Database Execution Logic
-    │   │   ├── project_service.py
-    │   │   ├── order_service.py
-    │   │   ├── global_search_service.py
-    │   │   └── rag_service.py   # ChromaDB & Vector Search Logic
-    │   ├── tools/               # Helper Tool Implementations
-    │   │   ├── get_orders.py
-    │   │   ├── get_projects.py
-    │   │   └── global_search.py
-    │   └── utils/               # Logging & Utilities
-    ├── init_vector_db.py        # Script to chunk and vectorize text
-    ├── local_data.db            # SQLite Database
-    ├── requirements.txt
-    ├── .env
-    └── README.md
+├── client/
+│   └── src/                 # React Application
+├── knowledge_base/          # Unstructured data for RAG
+│   └── company_policies.txt 
+├── src/
+│   ├── ai_agent.py          # Main LangGraph Engine & Agent Tools
+│   ├── main.py              # FastAPI Application
+│   ├── db_setup.py          # SQLite Initialization
+│   ├── models/              # Pydantic Schemas
+│   ├── routes/              # API Endpoints
+│   ├── services/            # Database Execution Logic
+│   │   ├── project_service.py
+│   │   ├── order_service.py
+│   │   ├── global_search_service.py
+│   │   └── rag_service.py   # ChromaDB & Vector Search Logic
+│   ├── tools/               # Helper Tool Implementations
+│   │   ├── get_orders.py
+│   │   ├── get_projects.py
+│   │   └── global_search.py
+│   └── utils/               # Logging & Utilities
+├── init_vector_db.py        # Script to chunk and vectorize text
+├── local_data.db            # SQLite Database
+├── requirements.txt
+├── .env
+└── README.md
 
 ## Getting Started
 
