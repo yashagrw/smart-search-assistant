@@ -5,26 +5,27 @@ from dotenv import load_dotenv
 from os import environ
 import google.generativeai as genai
 
-# Core LangGraph imports
+# Core LangGraph imports for state management and routing
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 
-# Service imports
+# Service imports for database and search logic
 from src.services.project_service import project_service_v1
 from src.services.order_service import order_service_v1
 from src.services.global_search_service import global_search_service
+from src.services.rag_service import query_knowledge_base
 
-# --- ENVIRONMENT SETUP ---
+# --- ENVIRONMENT CONFIGURATION ---
 load_dotenv()
 GEMINI_API_KEY = environ.get("GEMINI_API_KEY")
 logger = logging.getLogger(__name__)
 
-# Configure Gemini with the API Key
+# Initialize the Gemini SDK
 genai.configure(api_key=GEMINI_API_KEY)
 
-# --- LANGGRAPH STATE SCHEMAS ---
+# --- LANGGRAPH STATE SCHEMA ---
 class AgentState(TypedDict):
-    """Defines the memory schema passed between graph nodes."""
+    """Defines the schema for the state passed between graph nodes."""
     system_prompt: str    
     query: str
     tool_name: str
@@ -32,10 +33,10 @@ class AgentState(TypedDict):
     tool_result: str
     all_tool_results: str 
     final_answer: str
-    # Conversation history (Append-only using operator.add)
+    # Chat history uses Annotated with operator.add to ensure append-only behavior
     chat_history: Annotated[list, operator.add]
 
-# --- NATIVE GEMINI TOOLS ---
+# --- AI AGENT TOOLS ---
 
 def search_project_database(sql_query: str) -> str:
     """
@@ -92,7 +93,7 @@ def search_order_database(sql_query: str) -> str:
 def search_global_database(keyword: str) -> str:
     """
     Performs a broad keyword search across all records using FTS5 (Full Text Search).
-    Use this tool for generic searches, IDs, partial addresses, group numbers, or when the intent is unclear.
+    Use this tool for generic database searches when the intent is unclear.
     
     Args:
         keyword: The primary search term or identifier extracted from the user's prompt.
@@ -104,20 +105,29 @@ def search_global_database(keyword: str) -> str:
     except Exception as e:
         return f"Search error: {str(e)}"
 
-# --- LANGGRAPH NODES ---
+def search_company_policies(search_query: str) -> str:
+    """
+    Searches the company's internal knowledge base (unstructured text/rules) using RAG and Vector Embeddings.
+    Use this tool ONLY when the user asks about company rules, IT support, HR policies, hardware requests, onboarding, or refund timelines.
+    
+    Args:
+        search_query: The exact question or search phrase the user is asking.
+    """
+    logger.info(f"Tool Execution -> RAG Policy Search: {search_query}")
+    return query_knowledge_base(search_query)
+
+
+# --- LANGGRAPH WORKFLOW NODES ---
 
 def agent_node(state: AgentState):
-    """
-    The Reasoning Engine. Analyzes state, context, and decides whether to invoke tools or return a final response.
-    """
+    """The reasoning node. Analyzes state, conversational context, and decides whether to invoke tools or generate the final response."""
     logger.info("[Node: Agent] Initializing reasoning phase...")
     
     model = genai.GenerativeModel(
         model_name="models/gemini-2.5-flash",
-        tools=[search_project_database, search_order_database, search_global_database]
+        tools=[search_project_database, search_order_database, search_global_database, search_company_policies]
     )
     
-    # Retrieve accumulated chat context
     history_list = state.get("chat_history", [])
     chat_context = "\n".join(history_list)
     
@@ -156,17 +166,14 @@ def agent_node(state: AgentState):
         response = model.generate_content(prompt)
         part = response.candidates[0].content.parts[0]
         
-        # Check if the LLM invoked a tool
         if part.function_call:
             func_name = part.function_call.name
             args = {k: v for k, v in part.function_call.args.items()}
-            logger.info(f"   -> [Action Required] LLM requested tool: {func_name}")
+            logger.info(f"   -> [Action Required] LLM requested tool execution: {func_name}")
             return {"tool_name": func_name, "tool_args": args}
             
-        # Check if the LLM provided a direct text response
         else:
-            logger.info("   -> Final response generated.")
-            # Append AI's response to the conversation history
+            logger.info("   -> Final response generated successfully.")
             return {
                 "final_answer": part.text, 
                 "tool_name": None,
@@ -178,9 +185,7 @@ def agent_node(state: AgentState):
         return {"final_answer": "I encountered an error while processing the request.", "tool_name": None}
 
 def tool_node(state: AgentState):
-    """
-    The Execution Engine. Parses the requested tool, executes it, and accumulates the results into the state.
-    """
+    """The execution node. Parses the requested tool, executes it, and accumulates the results."""
     tool_name = state.get("tool_name")
     args = state.get("tool_args", {})
     
@@ -189,7 +194,8 @@ def tool_node(state: AgentState):
     available_tools = {
         "search_project_database": search_project_database,
         "search_order_database": search_order_database,
-        "search_global_database": search_global_database
+        "search_global_database": search_global_database,
+        "search_company_policies": search_company_policies
     }
     
     if tool_name in available_tools:
@@ -198,7 +204,6 @@ def tool_node(state: AgentState):
             result = tool_func(**args)
             logger.info("   -> Routine executed successfully.")
             
-            # Accumulate historical tool data to prevent context loss in multi-step queries
             current_history = state.get("all_tool_results", "")
             new_history = current_history + f"\n--- Data from {tool_name} ---\n{result}\n"
             
@@ -211,7 +216,7 @@ def tool_node(state: AgentState):
     return {"tool_result": "Error: Unrecognized tool requested."}
 
 def should_continue(state: AgentState):
-    """Conditional routing logic to determine the next graph node."""
+    """Conditional routing logic to determine the next graph edge."""
     if state.get("tool_name"):
         return "continue"
     return "end"
@@ -219,8 +224,6 @@ def should_continue(state: AgentState):
 # ==========================================
 # GLOBAL GRAPH CONFIGURATION
 # ==========================================
-
-# Initialize persistent memory saver for conversational context
 memory = MemorySaver()
 workflow = StateGraph(AgentState)
 
@@ -231,14 +234,11 @@ workflow.set_entry_point("agent")
 workflow.add_conditional_edges("agent", should_continue, {"continue": "action", "end": END})
 workflow.add_edge("action", "agent")
 
-# Compile the graph globally to retain the checkpointer state across requests
 app = workflow.compile(checkpointer=memory)
 
-# --- ENTRY POINT ---
+# --- MAIN API ENTRY POINT ---
 def get_response_from_ai_agent(model_name, query, allow_search, prompt, thread_id):
-    """
-    Main entry point for the API route. Initializes state and invokes the LangGraph workflow.
-    """
+    """Entry point for the FastAPI route. Initializes state and invokes the workflow."""
     logger.info(f"🚀 Invoking Autonomous Agent Workflow for query: {query}")
     
     try:
@@ -250,11 +250,9 @@ def get_response_from_ai_agent(model_name, query, allow_search, prompt, thread_i
             "tool_result": None,
             "all_tool_results": "",
             "final_answer": None,
-            # Append user's query to the conversation history
             "chat_history": [f"User: {query}"] 
         }
         
-        # Ensure a valid thread_id exists for session tracking
         if not thread_id:
             thread_id = "default_session_id"
             

@@ -43,3 +43,9 @@ local_data/
 
 # Ignore secrets
 secrets.json
+
+# Vector Database (ChromaDB)
+chroma_db/
+
+# Ignore learning and playground files
+playground*.py

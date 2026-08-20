@@ -1,0 +1,137 @@
+import os
+import re
+import chromadb
+import google.generativeai as genai
+from dotenv import load_dotenv
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+# --- CUSTOM EMBEDDING FUNCTION ---
+class CustomGeminiEmbeddingFunction(chromadb.EmbeddingFunction):
+    """
+    A custom embedding class to bridge Google Gemini's native embedding API with ChromaDB.
+    This bypasses potential version conflicts or header issues in the default integration.
+    """
+    def __init__(self):
+        # Explicit initialization to comply with ChromaDB's Base class requirements
+        pass
+
+    def __call__(self, input: chromadb.Documents) -> chromadb.Embeddings:
+        """
+        Takes a list of string chunks, calls the Google Gemini API, and returns a list of embeddings.
+        """
+        result = genai.embed_content(
+            model="models/gemini-embedding-001",
+            content=input,
+            task_type="RETRIEVAL_DOCUMENT"
+        )
+        # The API returns a dictionary where 'embedding' contains the list of vectors
+        return result['embedding']
+
+def setup_vector_database():
+    """
+    Initializes a persistent ChromaDB instance, uses Gemini Embeddings (3072 dimensions), 
+    processes unstructured text documents, applies chunking strategies with overlap, 
+    extracts metadata, and upserts the embeddings.
+    """
+    print("🚀 Initializing Enterprise-Grade Vector Database Setup with Gemini Embeddings...")
+
+    # 1. ENVIRONMENT & API CONFIGURATION
+    load_dotenv()
+    gemini_api_key = os.environ.get("GEMINI_API_KEY")
+    if not gemini_api_key:
+        print("❌ Error: GEMINI_API_KEY not found in environment variables.")
+        return
+
+    # Configure the native Gemini SDK
+    genai.configure(api_key=gemini_api_key)
+
+    # Instantiate the custom embedding function
+    custom_google_ef = CustomGeminiEmbeddingFunction()
+
+    # 2. PERSISTENT VECTOR STORE CONFIGURATION
+    # Ensures embeddings are saved to the disk in the './chroma_db' directory
+    client = chromadb.PersistentClient(path="./chroma_db")
+    
+    collection = client.get_or_create_collection(
+        name="company_policies",
+        embedding_function=custom_google_ef
+    )
+    
+    file_path = "knowledge_base/company_policies.txt"
+    if not os.path.exists(file_path):
+        print(f"❌ Error: Knowledge base file not found at {file_path}")
+        return
+
+    with open(file_path, "r", encoding="utf-8") as f:
+        full_text = f.read()
+
+    # 3. CHUNKING STRATEGY (WITH OVERLAP)
+    # Breaking the text into 500-character segments with a 100-character overlap
+    # to maintain semantic context across chunks.
+    print("🔪 Processing document using RecursiveCharacterTextSplitter...")
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=500,
+        chunk_overlap=100,
+        length_function=len,
+        separators=["\n\n", "\n", ". ", " "] 
+    )
+
+    # 4. METADATA EXTRACTION & STRUCTURAL PARSING
+    sections = full_text.split("[SECTION ")
+    
+    documents = []
+    metadatas = []
+    ids = []
+    chunk_counter = 0
+
+    for section in sections:
+        # Ignore empty segments or the main title
+        if not section.strip() or "COMPANY OPERATIONS" in section:
+            continue
+            
+        # Extract the specific Section Header (e.g., "1: ORDER CANCELLATIONS")
+        section_title_match = re.match(r"(.*?)]", section)
+        if section_title_match:
+            section_name = section_title_match.group(1).strip()
+            # Separate the body from the title
+            section_body = section.replace(section_title_match.group(0), "").strip()
+        else:
+            section_name = "General"
+            section_body = section.strip()
+
+        # Split the extracted body into smaller overlapping chunks
+        chunks = text_splitter.split_text(section_body)
+        
+        for chunk in chunks:
+            documents.append(chunk)
+            
+            # Inject relevant metadata for highly contextual retrieval
+            metadatas.append({
+                "source": "company_policies.txt",
+                "version": "v2.4",
+                "section": section_name,
+                "chunk_size": len(chunk)
+            })
+            
+            # Generate deterministic UUIDs (e.g., doc_1_chunk_0)
+            safe_section_name = section_name.split(':')[0].strip().replace(" ", "_")
+            ids.append(f"doc_{safe_section_name}_chunk_{chunk_counter}")
+            chunk_counter += 1
+
+    print(f"\n📚 Successfully generated {len(documents)} context-aware text chunks.")
+    print("Initiating 3072-Dimensional Gemini embedding generation and Vector DB ingestion...")
+
+    # 5. UPSERT OPERATION
+    # Utilizing upsert to prevent duplication if the script is executed multiple times
+    collection.upsert(
+        documents=documents,
+        metadatas=metadatas,
+        ids=ids
+    )
+
+    # Display final verification
+    print("\n✅ Operation Successful: Vector Database Populated with Gemini Vectors.")
+    print(f"-> Total indexed records in database: {collection.count()}")
+
+if __name__ == "__main__":
+    setup_vector_database()

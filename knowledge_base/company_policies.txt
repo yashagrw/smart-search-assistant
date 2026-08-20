@@ -1,0 +1,21 @@
+COMPANY OPERATIONS AND COMPLIANCE MANUAL (v2.4)
+
+[SECTION 1: ORDER CANCELLATIONS & REFUNDS]
+1.1 Cancellations: An order can only be cancelled if its displayStatus is 'order_processing'. Once the status changes to 'in_escrow' or 'closed', cancellations are strictly prohibited.
+1.2 Refund Timelines: Approved refunds are processed within 5 to 7 business days to the original payment method. If the payment was made via Wire Transfer, it may take up to 14 business days.
+1.3 Escalations: For refunds delayed beyond 15 days, the customer must raise a ticket with the billing department using the keyword 'ESCALATE-REFUND'.
+
+[SECTION 2: PROJECT MANAGEMENT PROTOCOLS]
+2.1 Project Closure: A project status can only be marked as 'closed' if all associated orders have a 'closed' displayStatus.
+2.2 Cancelled Projects: Projects with a 'cancelled' status are permanently archived. They cannot be reopened, resumed, or modified under any circumstances. A completely new project ID and Group Number must be generated to restart the initiative.
+2.3 Client Onboarding: The standard client onboarding phase takes approximately 2 weeks from the signing of the initial Service Level Agreement (SLA).
+
+[SECTION 3: IT & INTERNAL SUPPORT]
+3.1 Hardware Requests: For any hardware failures (e.g., laptop breakdown, monitor issues), employees must raise a Level 2 ticket on the internal ServiceNow portal under the 'Hardware-Replace' category.
+3.2 Software Access: Access to the global search database and project modification tools requires managerial approval and completion of the mandatory 'Data Privacy 101' certification.
+3.3 Password Resets: Password reset requests are handled by the automated IT bot. IT personnel will never ask for your password over email or chat.
+
+[SECTION 4: HR & EMPLOYEE CONDUCT]
+4.1 Timesheets: All employees are required to log their working hours in the Kronos timesheet application by Friday 5:00 PM EST every week. Failure to do so will delay payroll processing.
+4.2 Remote Work: Employees are allowed up to 2 days of remote work per week, subject to project requirements and manager approval.
+4.3 Cafeteria Rules: Free coffee, tea, and dry snacks are available in the cafeteria on the 3rd floor. Hot meals are only served between 12:30 PM and 2:30 PM.
