@@ -1,6 +1,7 @@
+import time
 import logging
 import operator
-from typing import TypedDict, Annotated
+from typing import TypedDict, Annotated, Optional, Dict, Any
 from dotenv import load_dotenv
 from os import environ
 import google.generativeai as genai
@@ -33,8 +34,10 @@ class AgentState(TypedDict):
     tool_result: str
     all_tool_results: str 
     final_answer: str
-    # Chat history uses Annotated with operator.add to ensure append-only behavior
+    # Append-only conversation history
     chat_history: Annotated[list, operator.add]
+    # Telemetry data (latency, token counts)
+    metrics: Dict[str, Any]
 
 # --- AI AGENT TOOLS ---
 
@@ -118,10 +121,14 @@ def search_company_policies(search_query: str) -> str:
 
 
 # --- LANGGRAPH WORKFLOW NODES ---
-
-def agent_node(state: AgentState):
-    """The reasoning node. Analyzes state, conversational context, and decides whether to invoke tools or generate the final response."""
-    logger.info("[Node: Agent] Initializing reasoning phase...")
+async def agent_node(state: AgentState):
+    """
+    Asynchronous reasoning node.
+    Leverages Gemini's async API to evaluate conversation context,
+    accumulate tool responses, and track token usage and latency.
+    """
+    start_time = time.perf_counter()
+    logger.info("[Node: Agent] Initializing asynchronous reasoning phase...")
     
     model = genai.GenerativeModel(
         model_name="models/gemini-2.5-flash",
@@ -130,7 +137,6 @@ def agent_node(state: AgentState):
     
     history_list = state.get("chat_history", [])
     chat_context = "\n".join(history_list)
-    
     tool_history = state.get("all_tool_results", "")
     
     if tool_history:
@@ -163,29 +169,68 @@ def agent_node(state: AgentState):
         """
         
     try:
-        response = model.generate_content(prompt)
+        # Non-blocking async API call to Gemini
+        response = await model.generate_content_async(prompt)
         part = response.candidates[0].content.parts[0]
         
+        # Calculate execution latency in milliseconds
+        elapsed_time_ms = round((time.perf_counter() - start_time) * 1000, 2)
+        
+        # Extract token usage metadata safely
+        usage = getattr(response, "usage_metadata", None)
+        token_metrics = {
+            "prompt_tokens": getattr(usage, "prompt_token_count", 0),
+            "completion_tokens": getattr(usage, "candidates_token_count", 0),
+            "total_tokens": getattr(usage, "total_token_count", 0)
+        }
+        
+        # Update telemetry metrics inside state
+        existing_metrics = state.get("metrics", {}) or {}
+        node_latencies = existing_metrics.get("node_latencies", [])
+        node_latencies.append({"node": "agent_node", "latency_ms": elapsed_time_ms})
+        
+        updated_metrics = {
+            **existing_metrics,
+            "node_latencies": node_latencies,
+            "latest_token_usage": token_metrics,
+            "total_accumulated_tokens": existing_metrics.get("total_accumulated_tokens", 0) + token_metrics["total_tokens"]
+        }
+        
+        logger.info(f"   -> [Telemetry] Agent Node finished in {elapsed_time_ms}ms. Tokens used: {token_metrics['total_tokens']}")
+        
+        # Check if Gemini requested a tool execution
         if part.function_call:
             func_name = part.function_call.name
             args = {k: v for k, v in part.function_call.args.items()}
             logger.info(f"   -> [Action Required] LLM requested tool execution: {func_name}")
-            return {"tool_name": func_name, "tool_args": args}
-            
+            return {
+                "tool_name": func_name, 
+                "tool_args": args,
+                "metrics": updated_metrics
+            }
         else:
             logger.info("   -> Final response generated successfully.")
             return {
                 "final_answer": part.text, 
                 "tool_name": None,
-                "chat_history": [f"AI: {part.text}"] 
+                "chat_history": [f"AI: {part.text}"],
+                "metrics": updated_metrics
             }
             
     except Exception as e:
-        logger.error(f"Agent Node Encountered an Error: {e}")
-        return {"final_answer": "I encountered an error while processing the request.", "tool_name": None}
+        logger.error(f"Agent Node Encountered an Error: {e}", exc_info=True)
+        return {
+            "final_answer": "I encountered an error while processing the request.", 
+            "tool_name": None
+        }
 
-def tool_node(state: AgentState):
-    """The execution node. Parses the requested tool, executes it, and accumulates the results."""
+async def tool_node(state: AgentState):
+    """
+    Asynchronous tool execution node.
+    Executes the requested tool, logs the tool execution latency,
+    and updates the accumulated results and state metrics.
+    """
+    start_time = time.perf_counter()
     tool_name = state.get("tool_name")
     args = state.get("tool_args", {})
     
@@ -198,22 +243,44 @@ def tool_node(state: AgentState):
         "search_company_policies": search_company_policies
     }
     
+    existing_metrics = state.get("metrics", {}) or {}
+    node_latencies = existing_metrics.get("node_latencies", [])
+    
     if tool_name in available_tools:
         tool_func = available_tools[tool_name]
         try:
+            # Execute the targeted tool function
             result = tool_func(**args)
-            logger.info("   -> Routine executed successfully.")
+            
+            elapsed_time_ms = round((time.perf_counter() - start_time) * 1000, 2)
+            logger.info(f"   -> [Telemetry] Tool '{tool_name}' finished in {elapsed_time_ms}ms.")
+            
+            # Record tool-specific latency in metrics
+            node_latencies.append({
+                "node": "tool_node",
+                "tool": tool_name,
+                "latency_ms": elapsed_time_ms
+            })
             
             current_history = state.get("all_tool_results", "")
             new_history = current_history + f"\n--- Data from {tool_name} ---\n{result}\n"
             
-            return {"tool_result": result, "all_tool_results": new_history}
+            updated_metrics = {
+                **existing_metrics,
+                "node_latencies": node_latencies
+            }
+            
+            return {
+                "tool_result": result, 
+                "all_tool_results": new_history,
+                "metrics": updated_metrics
+            }
             
         except Exception as e:
-            logger.error(f"Routine Execution Error: {e}")
-            return {"tool_result": str(e)}
+            logger.error(f"Routine Execution Error: {e}", exc_info=True)
+            return {"tool_result": str(e), "metrics": existing_metrics}
             
-    return {"tool_result": "Error: Unrecognized tool requested."}
+    return {"tool_result": "Error: Unrecognized tool requested.", "metrics": existing_metrics}
 
 def should_continue(state: AgentState):
     """Conditional routing logic to determine the next graph edge."""
@@ -237,9 +304,15 @@ workflow.add_edge("action", "agent")
 app = workflow.compile(checkpointer=memory)
 
 # --- MAIN API ENTRY POINT ---
-def get_response_from_ai_agent(model_name, query, allow_search, prompt, thread_id):
-    """Entry point for the FastAPI route. Initializes state and invokes the workflow."""
-    logger.info(f"🚀 Invoking Autonomous Agent Workflow for query: {query}")
+# --- MAIN ASYNC API ENTRY POINT ---
+async def get_response_from_ai_agent(model_name: str, query: str, allow_search: bool, prompt: str, thread_id: str):
+    """
+    Asynchronous entry point for the FastAPI controller.
+    Initializes state, invokes the StateGraph using ainvoke,
+    and returns a structured payload with the answer and telemetry metrics.
+    """
+    total_start_time = time.perf_counter()
+    logger.info(f"🚀 Invoking Asynchronous Agent Workflow for query: {query}")
     
     try:
         initial_state = {
@@ -250,7 +323,12 @@ def get_response_from_ai_agent(model_name, query, allow_search, prompt, thread_i
             "tool_result": None,
             "all_tool_results": "",
             "final_answer": None,
-            "chat_history": [f"User: {query}"] 
+            "chat_history": [f"User: {query}"],
+            "metrics": {
+                "node_latencies": [],
+                "latest_token_usage": {},
+                "total_accumulated_tokens": 0
+            }
         }
         
         if not thread_id:
@@ -258,15 +336,30 @@ def get_response_from_ai_agent(model_name, query, allow_search, prompt, thread_i
             
         config = {"configurable": {"thread_id": thread_id}}
         
-        final_state = app.invoke(initial_state, config=config)
+        # Non-blocking asynchronous graph execution
+        final_state = await app.ainvoke(initial_state, config=config)
         
-        answer = final_state.get("final_answer")
-        if answer:
-            logger.info("✅ Agent Workflow completed successfully.")
-            return answer
-        else:
-            return "Unable to generate a valid response."
+        total_time_ms = round((time.perf_counter() - total_start_time) * 1000, 2)
+        answer = final_state.get("final_answer") or "Unable to generate a valid response."
+        
+        # Consolidate telemetry metrics
+        metrics_data = final_state.get("metrics", {})
+        metrics_data["total_latency_ms"] = total_time_ms
+        
+        logger.info(f"✅ Workflow completed in {total_time_ms}ms with {metrics_data.get('total_accumulated_tokens', 0)} total tokens.")
+        
+        # Return structured dictionary containing both text response and performance telemetry
+        return {
+            "answer": answer,
+            "metrics": metrics_data
+        }
             
     except Exception as e:
-        logger.error(f"Critical Workflow Failure: {e}")
-        return "A critical system error occurred while processing your request. Please try again."
+        logger.error(f"Critical Workflow Failure: {e}", exc_info=True)
+        return {
+            "answer": "A critical system error occurred while processing your request. Please try again.",
+            "metrics": {
+                "total_latency_ms": round((time.perf_counter() - total_start_time) * 1000, 2),
+                "error": str(e)
+            }
+        }
