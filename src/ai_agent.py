@@ -1,7 +1,8 @@
 import time
+import asyncio
 import logging
 import operator
-from typing import TypedDict, Annotated, Optional, Dict, Any
+from typing import TypedDict, Annotated, Optional, Dict, Any, List
 from dotenv import load_dotenv
 from os import environ
 import google.generativeai as genai
@@ -24,19 +25,21 @@ logger = logging.getLogger(__name__)
 # Initialize the Gemini SDK
 genai.configure(api_key=GEMINI_API_KEY)
 
-# --- LANGGRAPH STATE SCHEMA ---
+# --- LANGGRAPH STATE SCHEMA (MULTI-TOOL & TELEMETRY SUPPORT) ---
 class AgentState(TypedDict):
-    """Defines the schema for the state passed between graph nodes."""
+    """
+    Defines the state schema passed between graph nodes.
+    Supports parallel tool executions, telemetry tracking, and append-only history.
+    """
     system_prompt: str    
     query: str
-    tool_name: str
-    tool_args: dict
-    tool_result: str
+    tool_calls: List[Dict[str, Any]]
+    tool_result: Optional[str]
     all_tool_results: str 
-    final_answer: str
-    # Append-only conversation history
+    final_answer: Optional[str]
+    # Append-only conversational memory
     chat_history: Annotated[list, operator.add]
-    # Telemetry data (latency, token counts)
+    # Execution telemetry and token metrics
     metrics: Dict[str, Any]
 
 # --- AI AGENT TOOLS ---
@@ -124,8 +127,8 @@ def search_company_policies(search_query: str) -> str:
 async def agent_node(state: AgentState):
     """
     Asynchronous reasoning node.
-    Leverages Gemini's async API to evaluate conversation context,
-    accumulate tool responses, and track token usage and latency.
+    Evaluates conversational context, extracts multiple/parallel tool invocations 
+    from LLM response parts, and tracks latency and token consumption metrics.
     """
     start_time = time.perf_counter()
     logger.info("[Node: Agent] Initializing asynchronous reasoning phase...")
@@ -154,7 +157,7 @@ async def agent_node(state: AgentState):
         
         Instructions:
         1. Review the data collected so far against the Original User Query.
-        2. If additional data is required to fully answer the query, invoke the appropriate tool.
+        2. If additional data is required to fully answer the query, invoke the appropriate tool(s).
         3. If all necessary data is present, generate the final comprehensive answer adhering strictly to the formatting rules.
         """
     else:
@@ -169,14 +172,13 @@ async def agent_node(state: AgentState):
         """
         
     try:
-        # Non-blocking async API call to Gemini
+        # Non-blocking asynchronous LLM generation
         response = await model.generate_content_async(prompt)
-        part = response.candidates[0].content.parts[0]
         
-        # Calculate execution latency in milliseconds
+        # Calculate reasoning latency
         elapsed_time_ms = round((time.perf_counter() - start_time) * 1000, 2)
         
-        # Extract token usage metadata safely
+        # Safely extract token consumption metadata
         usage = getattr(response, "usage_metadata", None)
         token_metrics = {
             "prompt_tokens": getattr(usage, "prompt_token_count", 0),
@@ -184,7 +186,7 @@ async def agent_node(state: AgentState):
             "total_tokens": getattr(usage, "total_token_count", 0)
         }
         
-        # Update telemetry metrics inside state
+        # Update telemetry state
         existing_metrics = state.get("metrics", {}) or {}
         node_latencies = existing_metrics.get("node_latencies", [])
         node_latencies.append({"node": "agent_node", "latency_ms": elapsed_time_ms})
@@ -198,22 +200,33 @@ async def agent_node(state: AgentState):
         
         logger.info(f"   -> [Telemetry] Agent Node finished in {elapsed_time_ms}ms. Tokens used: {token_metrics['total_tokens']}")
         
-        # Check if Gemini requested a tool execution
-        if part.function_call:
-            func_name = part.function_call.name
-            args = {k: v for k, v in part.function_call.args.items()}
-            logger.info(f"   -> [Action Required] LLM requested tool execution: {func_name}")
+        candidate = response.candidates[0]
+        extracted_tool_calls = []
+        final_text_parts = []
+        
+        # Iterate over all content parts to collect text or parallel function calls
+        for part in candidate.content.parts:
+            if part.function_call:
+                func_name = part.function_call.name
+                func_args = {k: v for k, v in part.function_call.args.items()}
+                extracted_tool_calls.append({"name": func_name, "args": func_args})
+            elif part.text:
+                final_text_parts.append(part.text)
+                
+        # If parallel or single tool execution is requested by the model
+        if extracted_tool_calls:
+            logger.info(f"   -> [Action Required] LLM requested {len(extracted_tool_calls)} tool execution(s): {[tc['name'] for tc in extracted_tool_calls]}")
             return {
-                "tool_name": func_name, 
-                "tool_args": args,
+                "tool_calls": extracted_tool_calls,
                 "metrics": updated_metrics
             }
         else:
+            final_text = "".join(final_text_parts)
             logger.info("   -> Final response generated successfully.")
             return {
-                "final_answer": part.text, 
-                "tool_name": None,
-                "chat_history": [f"AI: {part.text}"],
+                "final_answer": final_text,
+                "tool_calls": [],
+                "chat_history": [f"AI: {final_text}"],
                 "metrics": updated_metrics
             }
             
@@ -221,70 +234,96 @@ async def agent_node(state: AgentState):
         logger.error(f"Agent Node Encountered an Error: {e}", exc_info=True)
         return {
             "final_answer": "I encountered an error while processing the request.", 
-            "tool_name": None
+            "tool_calls": []
         }
 
 async def tool_node(state: AgentState):
     """
-    Asynchronous tool execution node.
-    Executes the requested tool, logs the tool execution latency,
-    and updates the accumulated results and state metrics.
+    Asynchronous parallel tool execution node.
+    Dispatches multiple tool calls concurrently via asyncio.gather and asyncio.to_thread,
+    logs individual tool latencies, and aggregates the results into state.
     """
-    start_time = time.perf_counter()
-    tool_name = state.get("tool_name")
-    args = state.get("tool_args", {})
-    
-    logger.info(f"[Node: Tool] Executing routine: {tool_name}")
-    
+    tool_calls = state.get("tool_calls", [])
+    if not tool_calls:
+        logger.info("[Node: Tool] No tool calls to execute.")
+        return {"tool_calls": []}
+
+    logger.info(f"[Node: Tool] Initiating parallel execution for {len(tool_calls)} tool(s)...")
+
     available_tools = {
         "search_project_database": search_project_database,
         "search_order_database": search_order_database,
         "search_global_database": search_global_database,
         "search_company_policies": search_company_policies
     }
-    
+
+    # Helper function to execute an individual tool with precise telemetry timing
+    async def execute_single_tool(call_item: Dict[str, Any]):
+        tool_name = call_item.get("name")
+        args = call_item.get("args", {})
+        start_time = time.perf_counter()
+
+        if tool_name not in available_tools:
+            return {
+                "tool": tool_name,
+                "result": f"Error: Unrecognized tool '{tool_name}' requested.",
+                "latency_ms": 0.0
+            }
+
+        try:
+            # Offload synchronous database/vector search to a thread pool for non-blocking concurrency
+            tool_func = available_tools[tool_name]
+            result = await asyncio.to_thread(tool_func, **args)
+            elapsed_ms = round((time.perf_counter() - start_time) * 1000, 2)
+            logger.info(f"   -> [Telemetry] Tool '{tool_name}' completed in {elapsed_ms}ms.")
+            return {
+                "tool": tool_name,
+                "result": str(result),
+                "latency_ms": elapsed_ms
+            }
+        except Exception as e:
+            elapsed_ms = round((time.perf_counter() - start_time) * 1000, 2)
+            logger.error(f"Error executing tool '{tool_name}': {e}", exc_info=True)
+            return {
+                "tool": tool_name,
+                "result": f"Tool execution failed: {str(e)}",
+                "latency_ms": elapsed_ms
+            }
+
+    # Execute all requested tools concurrently
+    execution_results = await asyncio.gather(*[execute_single_tool(tc) for tc in tool_calls])
+
+    # Accumulate results and update metrics
     existing_metrics = state.get("metrics", {}) or {}
     node_latencies = existing_metrics.get("node_latencies", [])
-    
-    if tool_name in available_tools:
-        tool_func = available_tools[tool_name]
-        try:
-            # Execute the targeted tool function
-            result = tool_func(**args)
-            
-            elapsed_time_ms = round((time.perf_counter() - start_time) * 1000, 2)
-            logger.info(f"   -> [Telemetry] Tool '{tool_name}' finished in {elapsed_time_ms}ms.")
-            
-            # Record tool-specific latency in metrics
-            node_latencies.append({
-                "node": "tool_node",
-                "tool": tool_name,
-                "latency_ms": elapsed_time_ms
-            })
-            
-            current_history = state.get("all_tool_results", "")
-            new_history = current_history + f"\n--- Data from {tool_name} ---\n{result}\n"
-            
-            updated_metrics = {
-                **existing_metrics,
-                "node_latencies": node_latencies
-            }
-            
-            return {
-                "tool_result": result, 
-                "all_tool_results": new_history,
-                "metrics": updated_metrics
-            }
-            
-        except Exception as e:
-            logger.error(f"Routine Execution Error: {e}", exc_info=True)
-            return {"tool_result": str(e), "metrics": existing_metrics}
-            
-    return {"tool_result": "Error: Unrecognized tool requested.", "metrics": existing_metrics}
+    accumulated_history = state.get("all_tool_results", "")
+
+    for res in execution_results:
+        node_latencies.append({
+            "node": "tool_node",
+            "tool": res["tool"],
+            "latency_ms": res["latency_ms"]
+        })
+        accumulated_history += f"\n--- Data from {res['tool']} ---\n{res['result']}\n"
+
+    updated_metrics = {
+        **existing_metrics,
+        "node_latencies": node_latencies
+    }
+
+    return {
+        "all_tool_results": accumulated_history,
+        "tool_calls": [],  # Clear the queue once all tools are executed
+        "metrics": updated_metrics
+    }
 
 def should_continue(state: AgentState):
-    """Conditional routing logic to determine the next graph edge."""
-    if state.get("tool_name"):
+    """
+    Conditional routing edge function.
+    Evaluates whether there are pending tool calls to execute or if the graph should conclude.
+    """
+    tool_calls = state.get("tool_calls", [])
+    if tool_calls and len(tool_calls) > 0:
         return "continue"
     return "end"
 
@@ -303,12 +342,11 @@ workflow.add_edge("action", "agent")
 
 app = workflow.compile(checkpointer=memory)
 
-# --- MAIN API ENTRY POINT ---
 # --- MAIN ASYNC API ENTRY POINT ---
 async def get_response_from_ai_agent(model_name: str, query: str, allow_search: bool, prompt: str, thread_id: str):
     """
     Asynchronous entry point for the FastAPI controller.
-    Initializes state, invokes the StateGraph using ainvoke,
+    Initializes multi-tool state, invokes the StateGraph using ainvoke,
     and returns a structured payload with the answer and telemetry metrics.
     """
     total_start_time = time.perf_counter()
@@ -318,8 +356,7 @@ async def get_response_from_ai_agent(model_name: str, query: str, allow_search: 
         initial_state = {
             "system_prompt": prompt,
             "query": query,
-            "tool_name": None,
-            "tool_args": {},
+            "tool_calls": [],
             "tool_result": None,
             "all_tool_results": "",
             "final_answer": None,
@@ -342,13 +379,12 @@ async def get_response_from_ai_agent(model_name: str, query: str, allow_search: 
         total_time_ms = round((time.perf_counter() - total_start_time) * 1000, 2)
         answer = final_state.get("final_answer") or "Unable to generate a valid response."
         
-        # Consolidate telemetry metrics
+        # Consolidate complete telemetry data
         metrics_data = final_state.get("metrics", {})
         metrics_data["total_latency_ms"] = total_time_ms
         
         logger.info(f"✅ Workflow completed in {total_time_ms}ms with {metrics_data.get('total_accumulated_tokens', 0)} total tokens.")
         
-        # Return structured dictionary containing both text response and performance telemetry
         return {
             "answer": answer,
             "metrics": metrics_data
