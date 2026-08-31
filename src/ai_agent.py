@@ -371,7 +371,11 @@ async def get_response_from_ai_agent(model_name: str, query: str, allow_search: 
         if not thread_id:
             thread_id = "default_session_id"
             
-        config = {"configurable": {"thread_id": thread_id}}
+        # Runtime configuration with session checkpointing and recursion circuit breaker
+        config = {
+            "configurable": {"thread_id": thread_id},
+            "recursion_limit": 8
+        }
         
         # Non-blocking asynchronous graph execution
         final_state = await app.ainvoke(initial_state, config=config)
