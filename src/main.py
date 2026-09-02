@@ -1,3 +1,8 @@
+# Override standard sqlite3 with modern pysqlite3 for ChromaDB compatibility on Linux
+__import__('pysqlite3')
+import sys
+sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from src.utils.logger import configure_logger
