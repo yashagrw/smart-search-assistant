@@ -1,0 +1,27 @@
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Python byte-code and cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Git and IDE metadata
+.git/
+.gitignore
+.vscode/
+.idea/
+
+# Local environment secrets (injected via Cloud App Settings)
+.env
+
+# Client folder (Frontend deployed separately on CDN)
+client/
+node_modules/
+
+# Markdown and audit files
+README.md
+PROJECT_AUDIT.md
