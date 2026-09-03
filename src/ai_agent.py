@@ -156,9 +156,9 @@ async def agent_node(state: AgentState):
         {tool_history}
         
         Instructions:
-        1. Review the data collected so far against the Original User Query.
-        2. If additional data is required to fully answer the query, invoke the appropriate tool(s).
-        3. If all necessary data is present, generate the final comprehensive answer adhering strictly to the formatting rules.
+1. R    1. Review the collected data against the Original User Query.
+        2. If a database query returned empty records ([]), DO NOT repeat the same query. Either try a fallback tool (like search_global_database) or conclude that the record does not exist.
+        3. If all needed data is gathered (or verified missing), generate the final comprehensive answer adhering to formatting rules.
         """
     else:
         logger.info("   -> First pass: Analyzing user query.")
@@ -396,8 +396,13 @@ async def get_response_from_ai_agent(model_name: str, query: str, allow_search: 
             
     except Exception as e:
         logger.error(f"Critical Workflow Failure: {e}", exc_info=True)
+        error_message = (
+            "The assistant reached the maximum reasoning steps without finding a complete answer. "
+            "Please verify the requested identifiers." if "recursion limit" in str(e).lower()
+            else "A system error occurred while processing your request. Please try again."
+        )
         return {
-            "answer": "A critical system error occurred while processing your request. Please try again.",
+            "answer": error_message,
             "metrics": {
                 "total_latency_ms": round((time.perf_counter() - total_start_time) * 1000, 2),
                 "error": str(e)
