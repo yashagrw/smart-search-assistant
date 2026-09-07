@@ -1,8 +1,13 @@
+import os
 import sqlite3
+import logging
 from src.utils.logger import configure_logger
 
-DB_PATH = 'local_data.db'
-logger = configure_logger(name="global_search_service", level="INFO")
+# Define absolute path to project root
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+DB_PATH = os.path.join(BASE_DIR, 'local_data.db')
+
+logger = configure_logger(name="global_search_service", level=logging.INFO)
 
 def global_search_service(search_terms):
     """
