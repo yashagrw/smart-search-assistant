@@ -1,10 +1,12 @@
 import sqlite3
 import random
 import string
-from datetime import datetime, timedelta
 import os
+from datetime import datetime, timedelta
 
-DB_PATH = 'local_data.db'
+# Define absolute database path relative to project root
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DB_PATH = os.path.join(BASE_DIR, 'local_data.db')
 
 def random_string(prefix, length=8):
     return prefix + ''.join(random.choices(string.digits, k=length))
@@ -65,10 +67,28 @@ def setup_db():
     client_names = [f'Client {i}' for i in range(1, 21)]
     c.executemany('INSERT INTO client (name) VALUES (?)', [(name,) for name in client_names])
 
-    # Insert dummy projects
-    statuses = ['open', 'cancelled']
+    # Insert deterministic benchmark records for consistent testing
     now = datetime.now()
-    for i in range(100):
+    now_iso = now.isoformat()
+    
+    deterministic_projects = [
+        ('Project P185602', 'P64852978', 'open', 1, now_iso, now_iso),
+        ('Project P352635', 'P19283746', 'cancelled', 2, now_iso, now_iso),
+        ('Project Alpha', 'P99887766', 'open', 3, now_iso, now_iso)
+    ]
+    c.executemany('''INSERT INTO projects (name, groupNumber, status, client_id, createdAt, updatedAt) 
+                     VALUES (?, ?, ?, ?, ?, ?)''', deterministic_projects)
+
+    deterministic_orders = [
+        (now_iso, now_iso, 'END1234567', 'order_processing', 'in_escrow', '123 Main St, Springfield, CA'),
+        (now_iso, now_iso, 'END7654321', 'closed', 'closed', '456 Oak Ave, Riverside, TX')
+    ]
+    c.executemany('''INSERT INTO orders (createdAt, updatedAt, fileNum, displayStatus, status, address) 
+                     VALUES (?, ?, ?, ?, ?, ?)''', deterministic_orders)
+
+    # Insert remaining random projects
+    statuses = ['open', 'cancelled']
+    for i in range(97):
         name = f'Project {random_string("P", 6)}'
         groupNumber = random_string('P', 8)
         status = random.choice(statuses)
@@ -78,10 +98,10 @@ def setup_db():
         c.execute('''INSERT INTO projects (name, groupNumber, status, client_id, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?)''',
                   (name, groupNumber, status, client_id, createdAt, updatedAt))
 
-    # Insert dummy orders with address
+    # Insert remaining random orders
     display_statuses = ['open', 'cancelled', 'order_processing', 'closed']
     order_statuses = ['in_escrow', 'cancelled', 'closed']
-    for i in range(100):
+    for i in range(98):
         createdAt = random_date(now - timedelta(days=365), now).isoformat()
         updatedAt = random_date(datetime.fromisoformat(createdAt), now).isoformat()
         fileNum = random_string('END', 7)
