@@ -1,7 +1,10 @@
-# Override standard sqlite3 with modern pysqlite3 for ChromaDB compatibility on Linux
-__import__('pysqlite3')
-import sys
-sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+# Override standard sqlite3 with modern pysqlite3 if available (required for ChromaDB on legacy Linux)
+try:
+    __import__('pysqlite3')
+    import sys
+    sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+except (ImportError, ModuleNotFoundError):
+    pass
 
 import logging
 from contextlib import asynccontextmanager
