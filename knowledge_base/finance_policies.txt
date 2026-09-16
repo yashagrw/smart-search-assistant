@@ -1,0 +1,32 @@
+[SECTION 1: GLOBAL TRAVEL AND AIRFARE BOOKING GUIDELINES]
+All official domestic and international business travel must be requested via the Navan/Concur travel portal at least 14 days prior to departure for domestic journeys and 21 days prior for intercontinental flights. Air travel under 6 continuous flight hours mandates Economy Class booking. For non-stop flights exceeding 6 hours or overnight red-eye itineraries, Premium Economy or Business Class travel is permissible with prior Executive Vice President (EVP) approval. Personal travel combined with business trips must be separated on personal payment cards with zero company liability.
+
+[SECTION 2: HOTEL ACCOMMODATION AND LODGING CAPS]
+Corporate lodging must be selected from designated corporate preferred hotel partners. Nightly room rate reimbursement caps (excluding mandatory local lodging taxes):
+- Tier 1 Global Metros (New York, London, Tokyo, San Francisco, Zurich, Singapore): Maximum $300 per night.
+- Tier 2 Major Cities (Austin, Chicago, Berlin, Toronto, Sydney, Bangalore, Dubai): Maximum $200 per night.
+- Tier 3 Regional Centers (All other locations): Maximum $130 per night.
+Incidental personal expenses including hotel minibar items, pay-per-view movies, spa treatments, laundry for trips under 4 days, and room service surcharges are strictly non-reimbursable.
+
+[SECTION 3: DAILY MEAL ALLOWANCE AND PER DIEM EXPENSES]
+During travel requiring overnight stay, employees receive a Daily Meal Per Diem allowance capped at $85 per day ($20 Breakfast, $25 Lunch, $40 Dinner). Individual itemized restaurant receipts containing tax details are mandatory for any individual meal claim exceeding $25. Alcoholic beverages are non-reimbursable under standard business meal rules. Client entertainment dinners exceeding $100 per attendee require advance Vice President approval and must list all attendee names and business justification on the expense report.
+
+[SECTION 4: GROUND TRANSPORTATION AND PERSONAL VEHICLE MILEAGE]
+Employees are encouraged to utilize public transit (subways, commuter rail) or standard ride-share services (UberX, Lyft standard) for airport and client site commutes. Luxury vehicle tiers (Uber Black, Lyft Lux) and limousine rentals are strictly non-reimbursable. When utilizing a personal vehicle for authorized business travel, fuel is reimbursed at standard IRS/local government statutory rates (e.g., $0.67 per mile in the US) which compensates for fuel, depreciation, and insurance. Traffic citations, speeding tickets, and parking fines are the sole responsibility of the driver.
+
+[SECTION 5: CORPORATE CREDIT CARD POLICY AND REIMBURSEMENT CYCLES]
+Employees incurring more than $1,000 in monthly recurring business expenses are issued a Corporate American Express card. Corporate cards must be used exclusively for authorized business transactions; personal purchases are considered a breach of financial integrity. Expense reports must be submitted via Concur by the 15th of the month following the transaction. Approved expenses submitted by the 15th are reimbursed on the final payroll run of that month. Late submissions beyond 60 days from the invoice date require CFO exception sign-off and risk forfeiture.
+
+[SECTION 6: PURCHASE ORDER (PO) AND PROCUREMENT APPROVAL MATRIX]
+Departmental purchases of goods, hardware, cloud licenses, software subscriptions, or vendor contracts must follow the corporate Delegation of Financial Authority (DoFA):
+- Tier 1 ($1 to $5,000): Direct Manager Approval.
+- Tier 2 ($5,001 to $25,000): Department Head / Vice President Approval.
+- Tier 3 ($25,001 to $100,000): Senior Vice President (SVP) + Head of Procurement Approval.
+- Tier 4 ($100,001 and above): Chief Financial Officer (CFO) + Board Audit Committee Sign-Off.
+Splitting single purchase orders into multiple smaller invoices to circumvent approval thresholds is a severe compliance violation.
+
+[SECTION 7: VENDOR ONBOARDING, DUE DILIGENCE, AND PAYMENT TERMS]
+All new suppliers, contractors, and agency partners must complete formal vendor onboarding through the Procurement Portal prior to issuing contracts. Mandatory requirements include W-9/W-8BEN tax forms, certificate of general liability insurance ($2M minimum), banking verification letters, and automated OFAC sanction screenings. Standard corporate payment terms are Net-45 days from receipt of a verified invoice. Early payment discounts (e.g., 2/10 Net 30) may be negotiated by the procurement team for accelerated cash flow terms.
+
+[SECTION 8: CAPITAL EXPENDITURES, ASSET DEPRECIATION, AND DISPOSAL]
+Tangible physical assets exceeding $2,500 with a useful operational lifespan greater than 12 months are categorized as Capital Expenditures (CapEx) and capitalized on company balance sheets under straight-line depreciation (IT Equipment: 3 years, Office Furniture: 7 years, Vehicles: 5 years). Decommissioning, selling, or donating retired corporate assets requires write-off authorization from the Corporate Controller and certified electronic data sanitization documentation (NIST 800-88 compliance).

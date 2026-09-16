@@ -1,0 +1,29 @@
+[SECTION 1: SUPPORT TICKET SEVERITY AND RESPONSE TIME SLAS]
+The customer success operations center provides 24/7/365 multi-tier technical support for all enterprise clients. SLA response and resolution timelines:
+- Priority 1 (System Down / Revenue Critical): First response within 15 minutes; emergency engineering bridge established within 30 minutes; work-around or hotfix deployed within 4 hours.
+- Priority 2 (Major Feature Impairment / Degraded Performance): First response within 1 hour; resolution or mitigation within 12 business hours.
+- Priority 3 (Minor Defect / Non-Critical Bug): First response within 4 business hours; resolution scheduled in next bi-weekly sprint cycle.
+- Priority 4 (General Inquiries / Documentation): Response within 24 business hours.
+
+[SECTION 2: ORDER CANCELLATION RULES AND LOCKOUT WINDOWS]
+Customers and account managers may initiate order cancellations directly through the portal under strict operational constraints:
+- Orders in 'Order Processing' or 'Pending Verification' status can be cancelled with a 100% full refund with zero restocking penalties within 24 hours of placement.
+- Once an order transitions to 'In Escrow' or 'Fulfillment Initiated', automatic portal cancellations are locked. Cancellation at this stage requires submitting an urgent ticket with the Escrow Team using tag [ESCALATE-ESCROW-CANCEL]; an administrative handling fee of 5% applies.
+- Orders in 'Shipped', 'Delivered', or 'Closed' status cannot be cancelled; customers must initiate standard return merchandise authorization (RMA) procedures.
+
+[SECTION 3: REFUND TIMELINES, PAYMENT METHODS, AND ESCALATION PROCESS]
+Approved customer refunds are credited back strictly to the original funding payment method to maintain AML compliance:
+- Credit / Debit Card Refunds: Processed within 3 to 5 business days; bank posting may require an additional 2-3 billing days depending on the card issuer.
+- ACH / Direct Bank Transfers: Credited within 5 to 7 business days.
+- Wire Transfers: Processed within 10 to 14 business days.
+- Cryptocurrency Payments: Converted and settled in USD fiat equivalents within 7 business days.
+If a customer refund is delayed beyond 15 business days, support agents must immediately open a priority ticket with the Treasury Department using the mandatory keyword 'ESCALATE-REFUND'.
+
+[SECTION 4: ESCROW DISPUTE RESOLUTION AND ARBITRATION]
+When transactions involve high-value property or bulk enterprise assets held in escrow, either party may file a formal dispute within 14 calendar days of transaction initiation. Upon dispute registration, escrow funds are frozen immediately. Both parties are granted 10 business days to upload verified documentation (bills of lading, inspection certificates, digital delivery receipts). If the dispute cannot be resolved amicably within 21 business days, the case is automatically escalated to binding third-party arbitration under American Arbitration Association (AAA) commercial rules.
+
+[SECTION 5: CHARGEBACK DEFENSE AND FRAUD INVESTIGATION PROTOCOLS]
+Upon receiving an automated payment dispute or chargeback notification from payment gateways (Stripe, Adyen, PayPal), the Risk and Fraud team initiates an immediate audit. The customer account is placed on temporary financial review. Support agents must compile evidence packages (IP logs, delivery confirmation, customer chat transcripts, digital signature logs) and respond to the card network within 7 business days. Fraudulent chargebacks result in immediate permanent account termination and referral to credit recovery bureaus.
+
+[SECTION 6: VIP CLIENT DIRECTORY AND ENTERPRISE DEDICATED SUPPORT]
+Enterprise accounts with annual contract values (ACV) exceeding $100,000 are designated as Tier-1 VIP Accounts. VIP clients are assigned a Dedicated Technical Account Manager (TAM) and have direct access to a private Slack/Teams bridge with sub-5-minute SLA response times during business hours. VIP clients receive quarterly business reviews (QBR), priority access to beta API features, and a guaranteed 99.99% uptime SLA backed by contractual financial service credits.

@@ -1,0 +1,26 @@
+[SECTION 1: ZERO TRUST ARCHITECTURE AND VPN ACCESS PROTOCOLS]
+All corporate data assets, code repositories, and cloud workloads operate under strict Zero Trust Network Access (ZTNA) principles. Remote workstation connections mandate device posture compliance checks (CrowdStrike Falcon sensor active, OS patches up to date, BitLocker disk encryption enabled) before authenticating via Microsoft Entra ID Multi-Factor Authentication (MFA). VPN sessions automatically terminate after 8 hours of continuous uptime or 15 minutes of zero network activity. Split tunneling is strictly disabled; all remote outbound traffic is routed through the corporate cloud firewall.
+
+[SECTION 2: PASSWORD COMPLEXITY, ROTATION, AND PRIVILEGED ACCESS]
+Standard employee account passwords must contain a minimum of 14 alphanumeric characters, incorporating at least one uppercase letter, one lowercase letter, one numeric digit, and two non-alphanumeric special symbols (e.g., #, $, @, !). Passwords automatically expire every 90 days, and the system prohibits reusing the last 12 historical passwords. Privileged Access Management (PAM) credentials for production databases, Kubernetes clusters, and cloud root accounts require Just-In-Time (JIT) access requests with automatic credential rotation every 4 hours and mandatory dual-approval from the Security Team.
+
+[SECTION 3: INCIDENT RESPONSE SLAS AND DATA BREACH ESCALATIONS]
+Any confirmed or suspected cybersecurity anomaly, phishing email, ransomware alert, lost hardware, or unauthorized credential disclosure must be reported within 60 minutes of discovery to the Security Operations Center (SOC) at security-alert@company.internal. Incident severity tiers:
+- P1 (Critical Outage/Active Data Exfiltration): SOC response within 15 minutes; containment within 1 hour.
+- P2 (Localized Malware/Compromised User Account): SOC response within 45 minutes; containment within 4 hours.
+- P3 (Suspicious Phishing/Unapproved Software): Response within 4 business hours.
+
+[SECTION 4: HARDWARE ALLOCATION, LIFECYCLE, AND REPLACEMENT SOP]
+Standard issue engineering workstations consist of a 16-inch Apple MacBook Pro (M3 Pro/36GB RAM) or Dell XPS 15 (i9/32GB RAM/1TB SSD). Hardware refresh cycles occur every 36 months. For hardware failures (e.g., motherboard failure, battery swelling, cracked display), employees must submit a Level 2 ServiceNow ticket under 'Hardware-Replace'. Loaner laptops are dispatched via overnight courier for remote workers within 24 hours. Under no circumstances may employees attempt unauthorized third-party hardware repairs.
+
+[SECTION 5: BRING YOUR OWN DEVICE (BYOD) AND MOBILE DEVICE MANAGEMENT]
+Employees accessing corporate email, Slack, or Jira from personal mobile devices must enroll in the Microsoft Intune Mobile Device Management (MDM) portal. MDM enforces an isolated corporate container, 6-digit PIN screen lock, biometrics, and remote enterprise data wipe capabilities. Personal photos, messages, and non-work applications are completely unmonitored by the company. Rooted, jailbroken, or developer-mode-enabled mobile devices are blocked from corporate tenant access.
+
+[SECTION 6: THIRD-PARTY SOFTWARE INSTALLATION AND REPOSITORIES]
+Installation of unapproved executable binaries (.exe, .pkg, .dmg, .msi) or unauthorized browser extensions on corporate machines is strictly blocked via endpoint application control policies. Open-source Python/Node.js packages must be installed exclusively through the internal Artifactory mirror registry (repo.internal.company.com). To request a new SaaS tool or developer dependency, employees must submit an IT Architecture Review ticket detailing license terms, SOC2 compliance reports, and GDPR privacy certifications.
+
+[SECTION 7: CORPORATE GENERATIVE AI AND CONFIDENTIAL DATA USAGE]
+Employees are permitted to utilize enterprise-approved AI tools (e.g., corporate-licensed Gemini Enterprise, GitHub Copilot) strictly for code generation, text drafting, and data synthesis. Under no circumstances should proprietary source code, customer personally identifiable information (PII), unreleased financial quarterly reports, or internal API secret keys be pasted into public, unvetted consumer AI chatbots. AI-generated code must undergo mandatory human peer review and automated SonarQube static security analysis prior to merging into production branches.
+
+[SECTION 8: EMPLOYEE OFFBOARDING AND SYSTEM ACCESS REVOCATION]
+Upon submission of a formal resignation or notification of involuntary termination, HR alerts the Identity and Access Management (IAM) team. On the employee's final business day at 17:00 local time, all Active Directory accounts, Google Workspace access, VPN profiles, and cloud SSO sessions are automatically revoked. Company-owned hardware must be returned via prepaid shipping boxes within 5 business days; failure to return assets results in holding final financial settlement and initiating legal recovery.
