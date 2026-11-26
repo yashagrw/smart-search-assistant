@@ -8,59 +8,60 @@ import time
 import asyncio
 import logging
 import operator
+import json
 from typing import TypedDict, Annotated, Optional, Dict, Any, List
 from dotenv import load_dotenv
-from os import environ
-import google.generativeai as genai
+import os
 
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 
-# --- REMOVED DIRECT SERVICE IMPORTS ---
-# We now use the standard MCP Client to decouple data sources from orchestrator logic
+# --- UNIVERSAL LLM GATEWAY ---
+import litellm
 from src.mcp.client import mcp_client
 
 load_dotenv()
-GEMINI_API_KEY = environ.get("GEMINI_API_KEY")
+# LiteLLM natively reads API keys from os.environ
+os.environ["GEMINI_API_KEY"] = os.environ.get("GEMINI_API_KEY", "")
+
 logger = logging.getLogger(__name__)
 
-# Initialize the Gemini SDK
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-
-# --- LANGGRAPH STATE SCHEMA ---
 class AgentState(TypedDict):
-    """
-    Defines the schema for the state passed between graph nodes.
-    Supports parallel MCP tool executions, telemetry tracking, and append-only history.
-    """
+    """Defines the state schema passed between graph nodes."""
     system_prompt: str    
     query: str
     tool_calls: List[Dict[str, Any]]
     tool_result: Optional[str]
     all_tool_results: str 
     final_answer: Optional[str]
-    # Append-only conversational memory reducer
     chat_history: Annotated[list, operator.add]
-    # Execution telemetry and token metrics
     metrics: Dict[str, Any]
-
-
-# --- ASYNCHRONOUS LANGGRAPH WORKFLOW NODES ---
 
 async def agent_node(state: AgentState):
     """
-    Asynchronous reasoning node.
-    Evaluates conversational context and dynamically requests tools discovered via MCP.
+    Asynchronous reasoning node utilizing LiteLLM Gateway.
+    Evaluates conversational context, supports cross-model fallbacks, 
+    and handles standardized OpenAI-format tool calling.
     """
     start_time = time.perf_counter()
-    logger.info("[Node: Agent] Initializing asynchronous reasoning phase with MCP tools...")
+    logger.info("[Node: Agent] Initializing LiteLLM reasoning phase with MCP tools...")
     
-    # Dynamically inject MCP-discovered tools into the Gemini LLM
-    model = genai.GenerativeModel(
-        model_name="models/gemini-2.5-flash",
-        tools=mcp_client.get_gemini_tool_declarations()
-    )
+    # 1. Translate MCP Tool Schemas into Universal OpenAI Format
+    universal_tools = []
+    for tool_entry in mcp_client._tool_registry.values():
+        mcp_schema = tool_entry["schema"]
+        
+        # 🛡️ Bulletproof extraction: Works for both MCP 1.x (inputSchema) and 2.x (input_schema)
+        input_params = getattr(mcp_schema, "input_schema", getattr(mcp_schema, "inputSchema", {}))
+        
+        universal_tools.append({
+            "type": "function",
+            "function": {
+                "name": mcp_schema.name,
+                "description": mcp_schema.description,
+                "parameters": input_params
+            }
+        })
     
     history_list = state.get("chat_history", [])
     chat_context = "\n".join(history_list)
@@ -77,8 +78,8 @@ async def agent_node(state: AgentState):
         
         Instructions:
         1. Review the collected data against the Original User Query.
-        2. If a database query returned empty records ([]), DO NOT repeat the same query. Either try a fallback tool or conclude that the record does not exist.
-        3. If all needed data is gathered, generate the final comprehensive answer adhering to formatting rules.
+        2. If a database query returned empty records ([]), DO NOT repeat the same query. Try a fallback tool or state it's missing.
+        3. If all needed data is gathered, generate the final comprehensive answer.
         """
     else:
         logger.info("   -> First pass: Analyzing user query.")
@@ -89,14 +90,23 @@ async def agent_node(state: AgentState):
         """
         
     try:
-        response = await model.generate_content_async(prompt)
-        elapsed_time_ms = round((time.perf_counter() - start_time) * 1000, 2)
+        # 2. Execute Universal LLM Call with High-Availability Fallback Routing
+        response = await litellm.acompletion(
+            model="gemini/gemini-2.5-flash",
+            messages=[{"role": "user", "content": prompt}],
+            tools=universal_tools if universal_tools else None,
+            fallbacks=["gemini/gemini-1.5-flash"],  # High Availability Safety Net
+            num_retries=2
+        )
         
-        usage = getattr(response, "usage_metadata", None)
+        elapsed_time_ms = round((time.perf_counter() - start_time) * 1000, 2)
+        message = response.choices[0].message
+        
+        # 3. Standardized Token Telemetry
         token_metrics = {
-            "prompt_tokens": getattr(usage, "prompt_token_count", 0),
-            "completion_tokens": getattr(usage, "candidates_token_count", 0),
-            "total_tokens": getattr(usage, "total_token_count", 0)
+            "prompt_tokens": response.usage.prompt_tokens,
+            "completion_tokens": response.usage.completion_tokens,
+            "total_tokens": response.usage.total_tokens
         }
         
         existing_metrics = state.get("metrics", {}) or {}
@@ -110,28 +120,24 @@ async def agent_node(state: AgentState):
             "total_accumulated_tokens": existing_metrics.get("total_accumulated_tokens", 0) + token_metrics["total_tokens"]
         }
         
-        logger.info(f"   -> [Telemetry] Agent Node finished in {elapsed_time_ms}ms. Tokens used: {token_metrics['total_tokens']}")
+        logger.info(f"   -> [Telemetry] Gateway Node finished in {elapsed_time_ms}ms. Tokens used: {token_metrics['total_tokens']}")
         
-        candidate = response.candidates[0]
+        # 4. Standardized Tool Parsing (OpenAI Format)
         extracted_tool_calls = []
-        final_text_parts = []
-        
-        for part in candidate.content.parts:
-            if part.function_call:
-                func_name = part.function_call.name
-                func_args = {k: v for k, v in part.function_call.args.items()}
+        if hasattr(message, "tool_calls") and message.tool_calls:
+            for tc in message.tool_calls:
+                func_name = tc.function.name
+                func_args = json.loads(tc.function.arguments)
                 extracted_tool_calls.append({"name": func_name, "args": func_args})
-            elif part.text:
-                final_text_parts.append(part.text)
                 
         if extracted_tool_calls:
-            logger.info(f"   -> [Action Required] LLM requested {len(extracted_tool_calls)} MCP tool execution(s): {[tc['name'] for tc in extracted_tool_calls]}")
+            logger.info(f"   -> [Action Required] Gateway requested {len(extracted_tool_calls)} tool execution(s).")
             return {
                 "tool_calls": extracted_tool_calls,
                 "metrics": updated_metrics
             }
         else:
-            final_text = "".join(final_text_parts)
+            final_text = message.content or ""
             logger.info("   -> Final response generated successfully.")
             return {
                 "final_answer": final_text,
@@ -141,9 +147,8 @@ async def agent_node(state: AgentState):
             }
             
     except Exception as e:
-        logger.error(f"Agent Node Encountered an Error: {e}", exc_info=True)
+        logger.error(f"Gateway Node Encountered an Error: {e}", exc_info=True)
         return {"final_answer": "I encountered an error while processing the request.", "tool_calls": []}
-
 
 async def tool_node(state: AgentState):
     """
